@@ -30,6 +30,12 @@ const configure = new SlashCommandBuilder().setName('configure').setDescription(
     channelOption(s, 'logs', 'Private staff channel for transcripts', [ChannelType.GuildText]);
     return textOption(s, 'banner', 'HTTPS image URL, or none to remove', false, 500);
   })
+  .addSubcommand(s => {
+    s.setName('panels').setDescription('Configure automatic home, session, and support panels');
+    channelOption(s, 'home', 'Home panel channel', [ChannelType.GuildText], false);
+    channelOption(s, 'support', 'Support panel channel', [ChannelType.GuildText], false);
+    return s.addBooleanOption(o => o.setName('enabled').setDescription('Automatically post and maintain the three panels'));
+  })
   .addSubcommand(s => s.setName('view').setDescription('Show saved settings'));
 
 const session = new SlashCommandBuilder().setName('session').setDescription('Manage ER:LC session announcements').setDMPermission(false);

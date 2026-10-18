@@ -1,6 +1,7 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder,
   ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import { SERVER_NAME, BOT_NAME } from './store.js';
+import { SERVER_EMOJIS } from './server-config.js';
 
 export const COLORS = { blue: 0x337ca0, green: 0x45a179, orange: 0xd89b45, red: 0xbc525a };
 export function embed(title, text, color = COLORS.blue, banner = null) {
@@ -50,8 +51,31 @@ export function sessionPayload(action, config, hostId, message) {
 export function openPanel(config) {
   return { embeds: [embed('Support Tickets', 'Need help? Open a private ticket and explain what you need.\n\nPlease keep one ticket open at a time.', COLORS.blue, config.banner)],
     components: [new ActionRowBuilder().addComponents(new ButtonBuilder()
-      .setCustomId('ticket:open').setLabel('Open Ticket').setStyle(ButtonStyle.Primary))],
+      .setCustomId('ticket:open').setLabel('Open Ticket').setEmoji(SERVER_EMOJIS.ticket).setStyle(ButtonStyle.Primary))],
     allowedMentions: { parse: [] } };
+}
+export function homePanel(settings, guildId) {
+  const buttons = [];
+  if (settings.sessions.channelId) buttons.push(new ButtonBuilder().setLabel('Sessions').setEmoji(SERVER_EMOJIS.link)
+    .setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guildId}/${settings.sessions.channelId}`));
+  if (settings.tickets.panelChannelId) buttons.push(new ButtonBuilder().setLabel('Support').setEmoji(SERVER_EMOJIS.support)
+    .setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guildId}/${settings.tickets.panelChannelId}`));
+  return { embeds: [embed(SERVER_NAME,
+    'Welcome to **Alaska State Roleplay**. We hope you enjoy your time in our community.\n\n' +
+    'Find our latest roleplay sessions in the sessions channel. If you need assistance, open a private ticket through Support.')],
+    components: buttons.length ? [new ActionRowBuilder().addComponents(...buttons)] : [], allowedMentions: { parse: [] } };
+}
+export function sessionStatusPanel(config, current) {
+  const active = current && current.status !== 'end';
+  const status = active ? ({ start: 'Online', boost: 'Online — Session Boost', full: 'Full' }[current.status] ?? 'Online') : 'Offline';
+  const body = embed('Session Status', active ? 'An Alaska State Roleplay session is active.' :
+    'There is no active session. Session announcements will be posted in this channel.', active ? COLORS.green : COLORS.red, config.banner)
+    .addFields({ name: 'Status', value: status, inline: true },
+      { name: 'Server Code', value: config.code || 'Join details will be posted before the next session.', inline: true });
+  if (active && current.hostId) body.addFields({ name: 'Session Host', value: `<@${current.hostId}>`, inline: true });
+  const buttons = config.code ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Quick Join')
+    .setEmoji(SERVER_EMOJIS.link).setStyle(ButtonStyle.Link).setURL(`https://erlc.gg/join/${encodeURIComponent(config.code)}`))] : [];
+  return { embeds: [body], components: buttons, allowedMentions: { parse: [] } };
 }
 export function ticketPanel(ticket, banner = null) {
   return { embeds: [embed(`Support Ticket #${ticket.id}`,

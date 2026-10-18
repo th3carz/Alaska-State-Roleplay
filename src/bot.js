@@ -4,6 +4,7 @@ import { embed, validBanner, welcomePayload, sessionPayload, assertSessionTransi
   openPanel, ticketPanel, ticketModal, closeModal } from './ui.js';
 import { collectTranscript } from './transcript.js';
 import { fetchServerScan, scanFiles } from './scan.js';
+import { Panels } from './panels.js';
 
 const TEXT_PERMS = [P.ViewChannel, P.SendMessages, P.EmbedLinks];
 const TICKET_PERMS = [...TEXT_PERMS, P.ReadMessageHistory, P.AttachFiles, P.ManageChannels, P.ManageRoles];
@@ -38,7 +39,7 @@ export function validatePrivateLogs(channel, guild, bot) {
 
 export class Bot {
   locks = new Locks();
-  constructor(client, store) { this.client = client; this.store = store; }
+  constructor(client, store) { this.client = client; this.store = store; this.panels = new Panels(this); }
   async botMember(guild) { return guild.members.me ?? guild.members.fetchMe(); }
   async channel(guild, id, type = ChannelType.GuildText) {
     if (!id) throw new Error('This system is not configured yet. Ask a manager to use /configure.');
@@ -122,7 +123,8 @@ export class Bot {
       await i.editReply({ embeds: [embed('Bot Configuration',
         `**Welcome**\nChannel: ${show(settings.welcome.channelId)}\nEnabled: ${settings.welcome.enabled}\n\n` +
         `**Sessions**\nChannel: ${show(settings.sessions.channelId)}\nER:LC code: ${show(settings.sessions.code)}\nStaff role: ${show(settings.sessions.staffRoleId)}\nPing role: ${show(settings.sessions.pingRoleId)}\n\n` +
-        `**Tickets**\nCategory: ${show(settings.tickets.categoryId)}\nSupport role: ${show(settings.tickets.supportRoleId)}\nTranscript channel: ${show(settings.tickets.logChannelId)}`)], allowedMentions: { parse: [] } });
+        `**Tickets**\nCategory: ${show(settings.tickets.categoryId)}\nSupport role: ${show(settings.tickets.supportRoleId)}\nTranscript channel: ${show(settings.tickets.logChannelId)}\n\n` +
+        `**Automatic Panels**\nEnabled: ${settings.panels.enabled}\nHome channel: ${show(settings.panels.homeChannelId)}\nSupport panel channel: ${show(settings.tickets.panelChannelId)}`)], allowedMentions: { parse: [] } });
       return;
     }
     const bot = await this.botMember(i.guild);
@@ -163,9 +165,21 @@ export class Bot {
       requireBotPermissions(category, bot, TICKET_PERMS);
       validatePrivateLogs(logs, i.guild, bot);
       Object.assign(patch, { categoryId: category.id, logChannelId: logs.id, supportRoleId: support.id });
+    } else if (section === 'panels') {
+      const home = i.options.getChannel('home');
+      const support = i.options.getChannel('support');
+      const enabled = i.options.getBoolean('enabled');
+      if (home) { requireBotPermissions(home, bot, [...TEXT_PERMS, P.ReadMessageHistory]); patch.homeChannelId = home.id; }
+      if (support) {
+        requireBotPermissions(support, bot, [...TEXT_PERMS, P.ReadMessageHistory]);
+        this.store.configure('tickets', { panelChannelId: support.id });
+      }
+      if (enabled !== null) patch.enabled = enabled;
     } else throw new Error('Unknown configuration section.');
     this.store.configure(section, patch);
-    await i.editReply(`${section[0].toUpperCase() + section.slice(1)} settings saved.`);
+    const panels = await this.panels.sync(i.guild);
+    const warning = panels.some(p => p.error) ? ' Some panels could not be refreshed; check the bot channel permissions.' : '';
+    await i.editReply(`${section[0].toUpperCase() + section.slice(1)} settings saved.${warning}`);
   }
   validStaffRole(role, guild) {
     if (role.id === guild.id || role.managed) throw new Error('Choose a dedicated staff role that can be assigned to members.');
@@ -204,6 +218,7 @@ export class Bot {
           await oldChannel.messages.edit(previous.messageId, { components: [], allowedMentions: { parse: [] } });
         } catch (error) { console.warn('Could not retire old session buttons:', error.code ?? error.name); }
       }
+      await this.panels.sync(i.guild);
       await i.editReply(`Session ${action === 'start' ? 'startup' : action} announced in <#${channel.id}>.`);
     });
   }
@@ -225,9 +240,11 @@ export class Bot {
       await this.manager(i);
       const config = this.requireTicketConfig();
       const channel = await this.channel(i.guild, i.options.getChannel('channel')?.id ?? i.channelId);
-      requireBotPermissions(channel, await this.botMember(i.guild), TEXT_PERMS);
-      await channel.send(openPanel(config));
-      await i.editReply(`Ticket panel posted in <#${channel.id}>.`);
+      requireBotPermissions(channel, await this.botMember(i.guild), [...TEXT_PERMS, P.ReadMessageHistory]);
+      await this.panels.ensure(i.guild, { kind: 'support', channelId: channel.id, payload: openPanel(config) });
+      this.store.configure('tickets', { panelChannelId: channel.id });
+      await this.panels.sync(i.guild);
+      await i.editReply(`Ticket panel ready in <#${channel.id}>.`);
     } else if (action === 'claim' || action === 'unclaim') await this.claim(i, action);
     else if (action === 'close') await this.closeTicket(i, i.options.getString('reason', true));
   }

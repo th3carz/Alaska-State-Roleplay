@@ -30,6 +30,25 @@ The bot refuses commands outside the fixed customer server. Command registration
 
 ## First-time configuration
 
+The customer's 2026-10-18 scan now supplies the missing channel and role settings automatically on first startup:
+
+| Purpose | Destination |
+| --- | --- |
+| New-member welcome messages | `#alaska-state-roleplay` (`1560911382294302750`) |
+| Home / welcome panel | `#home` (`1560914196898643969`) |
+| Permanent session status panel and session announcements | `#sessions` (`1560914589066072074`) |
+| Support / Open Ticket panel | `#support` (`1560914284979167252`) |
+| New private tickets | Tickets category (`1553703456055763115`) |
+| Ticket transcripts | `#ticket-transcripts` (`1553703567314002021`) |
+| Session and ticket staff | Staff team (`1560951618361499718`) |
+| Session announcement ping | Sessions (`1560951687429099552`) |
+
+Existing non-empty settings are preserved, and this seed runs once. The ER:LC join code is not present in a server scan; set it with `/configure sessions` before starting a session.
+
+The bot automatically posts/updates the Home, Session Status, and Support panels on startup, after configuration changes, and every five minutes. It restores deleted tracked panels. It keeps each panel message ID and checks existing bot-owned panel messages before creating one, including after local database loss. Member welcome messages are sent only when a human member joins; startup does not fabricate member joins or announce a session startup.
+
+Use `/configure panels enabled:false` to stop automatic panel maintenance, or set `home`/`support` to move their destinations. `/ticket panel` also reuses the existing support panel rather than posting another copy. Channel history must be readable for duplicate checks. The persistent session status panel updates after `/session start`, `/session boost`, `/session full`, and `/session end`.
+
 Run these as a member with **Manage Server**, choosing the actual channels and roles in Discord:
 
 ```text

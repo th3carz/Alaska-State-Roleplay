@@ -10,7 +10,8 @@ export const defaults = Object.freeze({
   welcome: { enabled: true, channelId: null, banner: null,
     message: 'Welcome to **Alaska State Roleplay**, {user}!\nWe hope you enjoy your time with us. You are member **#{memberCount}**.' },
   sessions: { channelId: null, code: null, staffRoleId: null, pingRoleId: null, banner: null },
-  tickets: { categoryId: null, supportRoleId: null, logChannelId: null, banner: null },
+  tickets: { categoryId: null, supportRoleId: null, logChannelId: null, banner: null, panelChannelId: null },
+  panels: { enabled: true, homeChannelId: null },
 });
 
 export class Store {
@@ -22,6 +23,8 @@ export class Store {
       PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS migrations (id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS panels (kind TEXT PRIMARY KEY, channel_id TEXT NOT NULL, message_id TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS tickets (
         id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id TEXT NOT NULL,
         channel_id TEXT UNIQUE, panel_id TEXT, claimed_by TEXT,
@@ -47,6 +50,26 @@ export class Store {
     this.db.prepare('INSERT INTO settings VALUES (1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value')
       .run(JSON.stringify(settings));
     return settings;
+  }
+  seedSettings(seed, migrationId) {
+    if (this.db.prepare('SELECT id FROM migrations WHERE id=?').get(migrationId)) return;
+    this.db.exec('BEGIN');
+    try {
+      for (const [section, values] of Object.entries(seed)) {
+        const current = this.settings()[section];
+        if (!current) throw new Error('Invalid server seed section');
+        const patch = Object.fromEntries(Object.entries(values).filter(([key]) => current[key] == null));
+        if (Object.keys(patch).length) this.configure(section, patch);
+      }
+      this.db.prepare('INSERT INTO migrations(id) VALUES (?)').run(migrationId);
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  panel(kind) { return this.db.prepare('SELECT * FROM panels WHERE kind=?').get(kind); }
+  panelForMessage(id) { return this.db.prepare('SELECT * FROM panels WHERE message_id=?').get(id); }
+  savePanel(kind, channelId, messageId) {
+    this.db.prepare('INSERT INTO panels VALUES (?,?,?) ON CONFLICT(kind) DO UPDATE SET channel_id=excluded.channel_id,message_id=excluded.message_id')
+      .run(kind, channelId, messageId);
   }
   session() {
     const row = this.db.prepare('SELECT value FROM sessions WHERE id=1').get();

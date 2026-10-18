@@ -4,6 +4,7 @@ import { Client, Events, GatewayIntentBits, ActivityType } from 'discord.js';
 import { Store, GUILD_ID, SERVER_NAME, APPLICATION_ID, BOT_NAME } from './store.js';
 import { commands } from './commands.js';
 import { Bot } from './bot.js';
+import { SERVER_SETTINGS, SERVER_SEED_KEY } from './server-config.js';
 
 if (existsSync('.env')) process.loadEnvFile('.env');
 const token = process.env.DISCORD_TOKEN?.trim();
@@ -13,6 +14,7 @@ if (!token) {
 }
 
 const store = new Store(resolve(process.env.DATABASE_PATH || './data/alaska.sqlite'));
+store.seedSettings(SERVER_SETTINGS, SERVER_SEED_KEY);
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -22,6 +24,7 @@ const client = new Client({
 const bot = new Bot(client, store);
 let initialized = false;
 let stopping = false;
+let panelTimer;
 
 client.once(Events.ClientReady, async () => {
   try {
@@ -45,6 +48,12 @@ client.once(Events.ClientReady, async () => {
     // These commands belong exclusively to this customer's server.
     await guild.commands.set(commands);
     initialized = true;
+    await bot.panels.sync(guild);
+    panelTimer = setInterval(() => {
+      if (!stopping) void bot.panels.sync(guild).catch(error =>
+        console.error('Automatic panel refresh failed:', error.code ?? error.name));
+    }, 5 * 60 * 1000);
+    panelTimer.unref();
     console.log(`Ready: ${BOT_NAME} for ${SERVER_NAME} (${GUILD_ID}). Welcome, sessions, and tickets enabled.`);
   } catch (error) {
     console.error('Startup failed. Check guild membership, intents, and bot permissions:', error.code ?? error.name);
@@ -58,6 +67,11 @@ client.on(Events.InteractionCreate, i => {
 client.on(Events.GuildMemberAdd, member => {
   if (initialized && !stopping) void bot.welcome(member).catch(error =>
     console.error('Welcome message failed:', error.code ?? error.name));
+});
+client.on(Events.MessageDelete, message => {
+  if (!initialized || stopping || message.guildId !== GUILD_ID) return;
+  if (store.panelForMessage(message.id)) void bot.panels.sync(message.guild).catch(error =>
+    console.error('Deleted panel could not be restored:', error.code ?? error.name));
 });
 client.on(Events.ChannelDelete, channel => {
   if (channel.guild?.id !== GUILD_ID || stopping) return;
@@ -77,6 +91,7 @@ process.on('SIGTERM', () => void shutdown(0));
 async function shutdown(code) {
   if (stopping) return;
   stopping = true;
+  clearInterval(panelTimer);
   // Stop accepting interactions, then give in-flight ticket actions time to commit.
   const deadline = Date.now() + 20_000;
   while (bot.locks.keys.size && Date.now() < deadline) await new Promise(r => setTimeout(r, 100));

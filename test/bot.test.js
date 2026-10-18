@@ -9,6 +9,7 @@ import { Bot, ticketOverwrites, requireTicketAccess, validatePrivateLogs } from 
 import { assertSessionTransition, welcomePayload, sessionPayload } from '../src/ui.js';
 import { commands } from '../src/commands.js';
 import { collectTranscript, renderTranscript } from '../src/transcript.js';
+const flatten = components => components.flatMap(c => { const x = c.toJSON ? c.toJSON() : c; return [x, ...flatten(x.components || [])]; });
 
 function fixture(t) {
   const store = new Store(':memory:');
@@ -168,11 +169,11 @@ test('session transitions prevent duplicate starts and boost/full/end before sta
 
 test('session announcements use the configured code and allow only the configured role ping', () => {
   const payload = sessionPayload('start', { code: 'AlaskaRP', pingRoleId: 'ping' }, 'host', '@everyone');
-  assert.equal(payload.components[0].toJSON().components[0].url, 'https://erlc.gg/join/AlaskaRP');
+  assert.ok(flatten(payload.components).some(c => c.url === 'https://erlc.gg/join/AlaskaRP'));
   assert.deepEqual(payload.allowedMentions, { parse: [], users: [], roles: ['ping'] });
 });
 
-test('successful session announcement is persisted and the old join button is retired', async t => {
+test('successful session announcement preserves its host and keeps earlier announcement history', async t => {
   const { store, bot } = fixture(t);
   store.configure('sessions', { channelId: 'sessions', code: 'AlaskaRP' });
   store.saveSession({ status: 'start', hostId: 'original-host', startedAt: 'yesterday', messageId: 'old', channelId: 'sessions' });
@@ -183,7 +184,7 @@ test('successful session announcement is persisted and the old join button is re
   await bot.session({ guild: {}, user: { id: 'manager' }, options: { getSubcommand: () => 'boost', getString: () => null }, editReply: async () => {} });
   assert.equal(store.session().messageId, 'new');
   assert.equal(store.session().hostId, 'original-host');
-  assert.deepEqual(edited[0], ['old', { components: [], allowedMentions: { parse: [] } }]);
+  assert.deepEqual(edited, []);
 });
 
 test('HTML transcripts escape scripts, markup, and untrusted attachment filenames', () => {

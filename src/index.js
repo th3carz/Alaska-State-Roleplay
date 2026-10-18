@@ -4,7 +4,7 @@ import { Client, Events, GatewayIntentBits, ActivityType } from 'discord.js';
 import { Store, GUILD_ID, SERVER_NAME, APPLICATION_ID, BOT_NAME } from './store.js';
 import { commands } from './commands.js';
 import { Bot } from './bot.js';
-import { SERVER_SETTINGS, SERVER_SEED_KEY } from './server-config.js';
+import { SERVER_SETTINGS, SERVER_SEED_KEY, REFERENCE_SETTINGS, REFERENCE_SEED_KEY } from './server-config.js';
 
 if (existsSync('.env')) process.loadEnvFile('.env');
 const token = process.env.DISCORD_TOKEN?.trim();
@@ -13,8 +13,11 @@ if (!token) {
   process.exit(1);
 }
 
-const store = new Store(resolve(process.env.DATABASE_PATH || './data/alaska.sqlite'));
+const databasePath = process.env.PERSISTENT_DATABASE_PATH ||
+  (process.env.RAILWAY_VOLUME_MOUNT_PATH ? resolve(process.env.RAILWAY_VOLUME_MOUNT_PATH, 'alaska.sqlite') : process.env.DATABASE_PATH) || './data/alaska.sqlite';
+const store = new Store(resolve(databasePath));
 store.seedSettings(SERVER_SETTINGS, SERVER_SEED_KEY);
+store.seedSettings(REFERENCE_SETTINGS, REFERENCE_SEED_KEY);
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -45,14 +48,17 @@ client.once(Events.ClientReady, async () => {
       catch (error) { console.warn('Could not set bot nickname; check Change Nickname permission:', error.code ?? error.name); }
     }
     await bot.recover(guild);
+    await bot.sessions.recover(guild);
     // These commands belong exclusively to this customer's server.
     await guild.commands.set(commands);
     initialized = true;
     await bot.panels.sync(guild);
     panelTimer = setInterval(() => {
-      if (!stopping) void bot.panels.sync(guild).catch(error =>
-        console.error('Automatic panel refresh failed:', error.code ?? error.name));
-    }, 5 * 60 * 1000);
+      if (!stopping) void (async () => {
+        await bot.panels.sync(guild);
+        await bot.sessions.recover(guild);
+      })().catch(error => console.error('Automatic panel refresh failed:', error.code ?? error.name));
+    }, 60 * 1000);
     panelTimer.unref();
     console.log(`Ready: ${BOT_NAME} for ${SERVER_NAME} (${GUILD_ID}). Welcome, sessions, and tickets enabled.`);
   } catch (error) {

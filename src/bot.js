@@ -1,10 +1,15 @@
 import { ChannelType, PermissionFlagsBits as P, MessageFlags } from 'discord.js';
-import { GUILD_ID, Locks } from './store.js';
+import { GUILD_ID, APPLICATION_ID, Locks } from './store.js';
 import { embed, validBanner, welcomePayload, sessionPayload, assertSessionTransition,
   openPanel, ticketPanel, ticketModal, closeModal } from './ui.js';
 import { collectTranscript } from './transcript.js';
 import { fetchServerScan, scanFiles } from './scan.js';
 import { Panels } from './panels.js';
+import { Sessions } from './sessions.js';
+import { TicketExtras } from './ticket-extras.js';
+import { ticketDetails, ticketRoles, ticketName, typeConfiguration } from './ticket-types.js';
+import { editPayload, componentText } from './layout.js';
+import { ticketNotice } from './ui.js';
 
 const TEXT_PERMS = [P.ViewChannel, P.SendMessages, P.EmbedLinks];
 const TICKET_PERMS = [...TEXT_PERMS, P.ReadMessageHistory, P.AttachFiles, P.ManageChannels, P.ManageRoles];
@@ -14,17 +19,19 @@ export function requireBotPermissions(channel, bot, permissions) {
   const actual = channel.permissionsFor(bot);
   if (!actual?.has(permissions)) throw new Error(`The bot is missing required permissions in #${channel.name}. Check channel and category permissions.`);
 }
-export function ticketOverwrites(guild, botId, ownerId, supportRoleId) {
+export function ticketOverwrites(guild, botId, ownerId, supportRoleId, extraRoles = [], reportedUserId = null) {
   return [
     { id: guild.id, deny: [P.ViewChannel, P.CreatePublicThreads, P.CreatePrivateThreads] },
     { id: botId, allow: TICKET_PERMS },
     { id: ownerId, allow: MEMBER_PERMS },
     { id: supportRoleId, allow: MEMBER_PERMS },
+    ...[...new Set(extraRoles)].filter(id => id !== supportRoleId && id !== guild.id).map(id => ({ id, allow: MEMBER_PERMS })),
+    ...(reportedUserId && ![ownerId,botId].includes(reportedUserId) ? [{ id: reportedUserId, deny: [P.ViewChannel] }] : []),
   ];
 }
 export function isManager(member) { return member.permissions.has(P.ManageGuild); }
 export function isSupport(member, ticket) {
-  return isManager(member) || member.roles.cache.has(ticket.support_role_id);
+  return isManager(member) || ticketRoles(ticket).some(id => member.roles.cache.has(id));
 }
 export function requireTicketAccess(member, ticket) {
   if (member.id !== ticket.owner_id && !isSupport(member, ticket))
@@ -39,7 +46,10 @@ export function validatePrivateLogs(channel, guild, bot) {
 
 export class Bot {
   locks = new Locks();
-  constructor(client, store) { this.client = client; this.store = store; this.panels = new Panels(this); }
+  constructor(client, store) {
+    this.client = client; this.store = store;
+    this.panels = new Panels(this); this.sessions = new Sessions(this); this.ticketExtras = new TicketExtras(this);
+  }
   async botMember(guild) { return guild.members.me ?? guild.members.fetchMe(); }
   async channel(guild, id, type = ChannelType.GuildText) {
     if (!id) throw new Error('This system is not configured yet. Ask a manager to use /configure.');
@@ -65,12 +75,13 @@ export class Bot {
     } catch (replyError) { console.error('Could not send error response:', replyError.code ?? replyError.name); }
   }
   async handle(i) {
-    if (!i.isChatInputCommand() && !i.isButton() && !i.isModalSubmit()) return;
+    if (!i.isChatInputCommand() && !i.isButton() && !i.isModalSubmit() && !i.isStringSelectMenu?.()) return;
     try {
       if (!i.inGuild() || i.guildId !== GUILD_ID) {
         await i.reply({ content: 'This bot is reserved for Alaska State Roleplay.', flags: MessageFlags.Ephemeral });
         return;
       }
+      if (await this.sessions.handle(i) || await this.ticketExtras.handle(i)) return;
       if (i.isChatInputCommand()) {
         await i.deferReply({ flags: MessageFlags.Ephemeral });
         if (i.commandName === 'configure') await this.configure(i);
@@ -88,9 +99,9 @@ export class Bot {
           const active = this.store.activeForOwner(i.user.id);
           if (active) throw new Error(active.channel_id ? `You already have a ticket: <#${active.channel_id}>.` : 'Your ticket is being created. Please wait.');
           await i.showModal(ticketModal());
-        } else if (/^ticket:claim:\d+$/.test(i.customId)) {
+        } else if (/^ticket:(claim|unclaim):\d+$/.test(i.customId)) {
           await i.deferReply({ flags: MessageFlags.Ephemeral });
-          await this.claim(i, 'toggle', Number(i.customId.split(':')[2]));
+          await this.claim(i, i.customId.split(':')[1], Number(i.customId.split(':')[2]));
         } else if (/^ticket:close:\d+$/.test(i.customId)) {
           // Opening a modal must be the initial response. Authorization is checked again on submission.
           const ticket = this.getTicket(i, Number(i.customId.split(':')[2]));
@@ -99,7 +110,8 @@ export class Bot {
         } else throw new Error('This button is no longer supported.');
       } else {
         await i.deferReply({ flags: MessageFlags.Ephemeral });
-        if (i.customId === 'ticket:create') await this.createTicket(i);
+        if (i.customId === 'ticket:create' || /^ticket:create:(general|internal|management)$/.test(i.customId))
+          await this.createTicket(i, i.customId.split(':')[2] || 'general');
         else if (/^ticket:finish:\d+$/.test(i.customId))
           await this.closeTicket(i, i.fields.getTextInputValue('reason'), Number(i.customId.split(':')[2]));
         else throw new Error('This form is no longer supported.');
@@ -147,6 +159,10 @@ export class Bot {
       const code = i.options.getString('code', true).trim();
       if (!/^[A-Za-z0-9_-]{1,64}$/.test(code)) throw new Error('Enter the private server code using letters, numbers, underscores, or hyphens.');
       Object.assign(patch, { channelId: channel.id, code });
+      const serverName = i.options.getString('server-name');
+      const ownerName = i.options.getString('owner-name');
+      if (serverName !== null) patch.serverLabel = serverName.trim() || 'Alaska State Roleplay';
+      if (ownerName !== null) patch.ownerLabel = ownerName.trim() || null;
       const staff = i.options.getRole('staff-role');
       const ping = i.options.getRole('ping-role');
       if (staff) { this.validStaffRole(staff, i.guild); patch.staffRoleId = staff.id; }
@@ -165,11 +181,17 @@ export class Bot {
       requireBotPermissions(category, bot, TICKET_PERMS);
       validatePrivateLogs(logs, i.guild, bot);
       Object.assign(patch, { categoryId: category.id, logChannelId: logs.id, supportRoleId: support.id });
+      for (const [option,key] of [['report-role','reportRoleId'],['management-role','managementRoleId']]) {
+        const role = i.options.getRole(option);
+        if (role) { this.validStaffRole(role, i.guild); patch[key] = role.id; }
+      }
     } else if (section === 'panels') {
       const home = i.options.getChannel('home');
       const support = i.options.getChannel('support');
+      const affiliations = i.options.getChannel('affiliations');
       const enabled = i.options.getBoolean('enabled');
       if (home) { requireBotPermissions(home, bot, [...TEXT_PERMS, P.ReadMessageHistory]); patch.homeChannelId = home.id; }
+      if (affiliations) { requireBotPermissions(affiliations, bot, [...TEXT_PERMS, P.ReadMessageHistory]); patch.affiliationChannelId = affiliations.id; }
       if (support) {
         requireBotPermissions(support, bot, [...TEXT_PERMS, P.ReadMessageHistory]);
         this.store.configure('tickets', { panelChannelId: support.id });
@@ -192,36 +214,7 @@ export class Bot {
     requireBotPermissions(channel, await this.botMember(member.guild), TEXT_PERMS);
     await channel.send(welcomePayload(member, settings));
   }
-  async session(i) {
-    await this.locks.run('session', async () => {
-      const config = this.store.settings().sessions;
-      const actor = await this.member(i);
-      if (!isManager(actor) && !(config.staffRoleId && actor.roles.cache.has(config.staffRoleId)))
-        throw new Error('Only the session staff role or a server manager can manage sessions.');
-      if (!config.code) throw new Error('Configure the ER:LC code with /configure sessions first.');
-      const action = i.options.getSubcommand();
-      const previous = this.store.session();
-      assertSessionTransition(previous, action);
-      const channel = await this.channel(i.guild, config.channelId);
-      requireBotPermissions(channel, await this.botMember(i.guild), [...TEXT_PERMS, P.ReadMessageHistory]);
-      const payload = sessionPayload(action, config, action === 'start' ? i.user.id : previous.hostId,
-        i.options.getString('message'));
-      const announcement = await channel.send(payload);
-      this.store.saveSession({ status: action, hostId: action === 'start' ? i.user.id : previous.hostId,
-        messageId: announcement.id, channelId: channel.id,
-        startedAt: action === 'start' ? new Date().toISOString() : previous.startedAt,
-        updatedAt: new Date().toISOString() });
-      // Retire outdated join buttons so old announcements cannot imply an earlier session is still active.
-      if (previous?.messageId && previous.status !== 'end') {
-        try {
-          const oldChannel = await this.channel(i.guild, previous.channelId);
-          await oldChannel.messages.edit(previous.messageId, { components: [], allowedMentions: { parse: [] } });
-        } catch (error) { console.warn('Could not retire old session buttons:', error.code ?? error.name); }
-      }
-      await this.panels.sync(i.guild);
-      await i.editReply(`Session ${action === 'start' ? 'startup' : action} announced in <#${channel.id}>.`);
-    });
-  }
+  async session(i) { return this.sessions.command(i); }
   requireTicketConfig() {
     const config = this.store.settings().tickets;
     if (!config.categoryId || !config.supportRoleId || !config.logChannelId)
@@ -236,6 +229,7 @@ export class Bot {
   }
   async ticketCommand(i) {
     const action = i.options.getSubcommand();
+    if (await this.ticketExtras.command(i, action)) return;
     if (action === 'panel') {
       await this.manager(i);
       const config = this.requireTicketConfig();
@@ -248,9 +242,9 @@ export class Bot {
     } else if (action === 'claim' || action === 'unclaim') await this.claim(i, action);
     else if (action === 'close') await this.closeTicket(i, i.options.getString('reason', true));
   }
-  async createTicket(i) {
+  async createTicket(i, type = 'general') {
     await this.locks.run(`owner:${i.user.id}`, async () => {
-      const config = this.requireTicketConfig();
+      const config = typeConfiguration(this.requireTicketConfig(), type);
       const existing = this.store.activeForOwner(i.user.id);
       if (existing) throw new Error(existing.channel_id ? `You already have a ticket: <#${existing.channel_id}>.` : 'Your ticket is already being created.');
       const subject = i.fields.getTextInputValue('subject').trim();
@@ -261,15 +255,25 @@ export class Bot {
       const role = await i.guild.roles.fetch(config.supportRoleId);
       if (!role) throw new Error('The support role was deleted. Ask a manager to update /configure tickets.');
       this.validStaffRole(role, i.guild);
+      let reportedUserId = null;
+      if (type === 'internal') {
+        reportedUserId = i.fields.getSelectedUsers('staff', true).first()?.id;
+        if (!reportedUserId || reportedUserId === i.user.id) throw new Error('Choose the staff member you are reporting.');
+        const reported = await i.guild.members.fetch({ user: reportedUserId, force: true });
+        const staffIds = [this.store.settings().tickets.supportRoleId, config.supportRoleId, ...config.accessRoleIds];
+        if (reported.user.bot || !staffIds.some(id => reported.roles.cache.has(id))) throw new Error('Choose a staff member of this server.');
+      }
       validatePrivateLogs(await this.channel(i.guild, config.logChannelId), i.guild, bot);
-      const ticket = this.store.reserveTicket(i.user.id, subject, config);
+      const ticket = this.store.reserveTicket(i.user.id, subject, config, {
+        type, reportedUserId, username: i.user.username, joinedAt: i.member?.joinedTimestamp ?? null,
+        accessRoleIds: config.accessRoleIds, participantIds: [],
+      });
       let channel;
       try {
-        const username = i.user.username.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40) || 'member';
-        channel = await i.guild.channels.create({ name: `support-${username}-${ticket.id}`,
+        channel = await i.guild.channels.create({ name: ticketName(ticket),
           type: ChannelType.GuildText, parent: category.id,
           topic: `asrp-ticket:${ticket.id}:owner:${i.user.id}`,
-          permissionOverwrites: ticketOverwrites(i.guild, bot.id, i.user.id, config.supportRoleId),
+          permissionOverwrites: ticketOverwrites(i.guild, bot.id, i.user.id, config.supportRoleId, config.accessRoleIds, reportedUserId),
           reason: `Support ticket #${ticket.id} opened by ${i.user.id}` });
       } catch (error) {
         // A network timeout can hide a successful channel creation. Keep the reservation
@@ -283,10 +287,9 @@ export class Bot {
       }
       const opened = this.store.updateTicket(ticket.id, { state: 'open', channel_id: channel.id });
       try {
-        const panel = await channel.send({ ...ticketPanel(opened, config.banner),
-          content: `<@${i.user.id}> <@&${config.supportRoleId}>`,
-          allowedMentions: { parse: [], users: [i.user.id], roles: [config.supportRoleId] } });
+        const panel = await channel.send(ticketPanel(opened, config.banner, true));
         this.store.updateTicket(ticket.id, { panel_id: panel.id });
+        if (panel.pin) await panel.pin('Support ticket information').catch(error => console.warn('Could not pin ticket information:', error.code ?? error.name));
       } catch (error) {
         console.error('Ticket opened without control panel:', error.code ?? error.name);
         await i.editReply(`Your ticket is <#${channel.id}>. The control panel could not be posted; staff can use /ticket commands after checking bot permissions.`);
@@ -298,7 +301,7 @@ export class Bot {
   async updatePanel(channel, ticket) {
     const payload = ticketPanel(ticket, this.store.settings().tickets.banner);
     if (ticket.panel_id) {
-      try { await channel.messages.edit(ticket.panel_id, payload); return; }
+      try { await channel.messages.edit(ticket.panel_id, editPayload(payload)); return; }
       catch (error) { if (error.code !== 10008) throw error; }
     }
     const panel = await channel.send(payload);
@@ -321,25 +324,29 @@ export class Bot {
         this.store.updateTicket(ticket.id, { claimed_by: ticket.claimed_by });
         throw error;
       }
+      if (i.channel.setName) await i.channel.setName(ticketName(updated), 'Ticket claim status changed')
+        .catch(error => console.warn('Could not update ticket channel status:', error.code ?? error.name));
+      if (i.channel.send) await i.channel.send(ticketNotice(shouldUnclaim ? 'Ticket Unclaimed' : 'Ticket Claimed',
+        shouldUnclaim ? `The ticket was unclaimed by <@${actor.id}>. Please wait for another staff member.` : `This ticket has been claimed by <@${actor.id}>.`))
+        .catch(error => console.warn('Ticket claim notice could not be sent:', error.code ?? error.name));
       await i.editReply(shouldUnclaim ? 'Ticket unclaimed.' : 'You claimed this ticket.');
     });
   }
   async setSending(channel, ticket, allowed) {
-    await channel.permissionOverwrites.edit(ticket.owner_id, { SendMessages: allowed });
-    await channel.permissionOverwrites.edit(ticket.support_role_id, { SendMessages: allowed });
+    const ids = [...new Set([ticket.owner_id, ...ticketRoles(ticket), ...(ticketDetails(ticket).participantIds || [])])];
+    for (const id of ids) await channel.permissionOverwrites.edit(id, { SendMessages: allowed });
   }
   async restoreSending(channel, ticket) {
     // Attempt both restores even if one role or member was removed during closure.
-    const results = await Promise.allSettled([
-      channel.permissionOverwrites.edit(ticket.owner_id, { SendMessages: true }),
-      channel.permissionOverwrites.edit(ticket.support_role_id, { SendMessages: true }),
-    ]);
+    const ids = [...new Set([ticket.owner_id, ...ticketRoles(ticket), ...(ticketDetails(ticket).participantIds || [])])];
+    const results = await Promise.allSettled(ids.map(id => channel.permissionOverwrites.edit(id, { SendMessages: true })));
     if (results.some(r => r.status === 'rejected' && ![10007, 10011].includes(r.reason?.code)))
       throw new Error('Sending permissions need a manager to restore them manually.');
   }
-  async closeTicket(i, rawReason, expectedId) {
+  async closeTicket(i, rawReason, expectedId, requestNonce = null) {
     await this.locks.run(`ticket:${i.channelId}`, async () => {
       const ticket = this.getTicket(i, expectedId);
+      if (requestNonce && ticketDetails(ticket).closeRequest?.nonce !== requestNonce) throw new Error('This closure request has already been handled.');
       requireTicketAccess(await this.member(i), ticket);
       const reason = rawReason.trim();
       if (reason.length < 3 || reason.length > 500) throw new Error('Give a closing reason between 3 and 500 characters.');
@@ -388,6 +395,38 @@ export class Bot {
         if (ticket.state === 'closing') await this.restoreSending(channel, ticket);
         this.store.updateTicket(ticket.id, { state: 'open', channel_id: channel.id, transcript_id: null, closed_by: null, close_reason: null });
       }
+    }
+    // Recover authentic bot tickets if the previous host discarded its local database.
+    // A topic alone is insufficient: the channel must contain this app's own ticket information message.
+    for (const channel of channels.values()) {
+      const match = channel?.type === ChannelType.GuildText && /^asrp-ticket:(\d+):owner:(\d+)$/.exec(channel.topic || '');
+      if (!match || this.store.forChannel(channel.id)) continue;
+      const id = Number(match[1]);
+      if (!Number.isSafeInteger(id) || id < 1 || this.store.ticket(id)) continue;
+      try {
+        let panel, before;
+        while (!panel) {
+          const page = await channel.messages.fetch({ limit: 100, ...(before ? { before } : {}), cache: false });
+          panel = page.find(m => m.author?.id === APPLICATION_ID && (
+            m.embeds?.some(e => e.title === `Support Ticket #${id}`) || componentText(m.components || []).includes(`## Support Ticket #${id}\n`)));
+          if (panel || page.size < 100) break;
+          const next = page.last()?.id;
+          if (!next || next === before) break;
+          before = next;
+        }
+        if (!panel) continue;
+        const text = [...(panel.embeds || []).map(e => e.description || ''), componentText(panel.components || [])].join('\n');
+        if (!text.includes(match[2])) continue;
+        const type = text.includes('Internal Affairs Support') ? 'internal' : text.includes('Management Support') ? 'management' : 'general';
+        const config = typeConfiguration(this.store.settings().tickets, type);
+        const subject = (/\*\*Inquiry:\*\* ([\s\S]*?)(?:\n-# |$)/.exec(text)?.[1] || /\*\*Request\*\*\n([\s\S]*)/.exec(text)?.[1] || 'Recovered ticket; see the original request above.').trim().slice(0,1000);
+        const claimedBy = /Claimed by <@!?(\d+)>/.exec(text)?.[1] || null;
+        this.store.importTicket(id, match[2], channel.id, subject, config,
+          { type, username: channel.name.replace(/^.*・(?:gen|ia|mgmt)-/u, '').replace(/^support-/, '').replace(new RegExp(`-${id}$`), ''),
+            accessRoleIds: config.accessRoleIds, participantIds: [], reportedUserId: /\*\*Staff:\*\* <@!?(\d+)>/.exec(text)?.[1] || null },
+          panel.id, claimedBy, new Date(channel.createdTimestamp || panel.createdTimestamp || Date.now()).toISOString());
+        console.log(`Recovered active support ticket #${id} from its Discord channel.`);
+      } catch (error) { console.warn(`Could not recover support ticket ${id}:`, error.code ?? error.name); }
     }
   }
 }

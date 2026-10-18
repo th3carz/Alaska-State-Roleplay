@@ -8,6 +8,13 @@ export const SERVER_SETTINGS = {
     logChannelId: '1553703567314002021', panelChannelId: '1560914284979167252' },
   panels: { homeChannelId: '1560914196898643969' },
 };
+export const REFERENCE_SEED_KEY = 'alaska-reference-flows-2026-10-18-v1';
+export const REFERENCE_SETTINGS = {
+  sessions: { code: 'Alaskasrp', ownerLabel: 'AEMeoow' },
+  tickets: { reportRoleId: '1553703181282709506', managementRoleId: '1553703178023997493',
+    leadershipRoleIds: ['1560949789141766184','1553703178023997493'] },
+  panels: { affiliationChannelId: '1560915371865935882' },
+};
 
 export const SERVER_EMOJIS = {
   support: { id: '1554358095503949825', name: 'rift_support', animated: false },

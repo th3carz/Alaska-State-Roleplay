@@ -1,7 +1,9 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder,
-  ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
+  ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, LabelBuilder, UserSelectMenuBuilder } from 'discord.js';
 import { SERVER_NAME, BOT_NAME } from './store.js';
 import { SERVER_EMOJIS } from './server-config.js';
+import { card } from './layout.js';
+import { TICKET_TYPES, ticketDetails } from './ticket-types.js';
 
 export const COLORS = { blue: 0x337ca0, green: 0x45a179, orange: 0xd89b45, red: 0xbc525a };
 export function embed(title, text, color = COLORS.blue, banner = null) {
@@ -40,19 +42,33 @@ export function assertSessionTransition(current, action) {
 }
 export function sessionPayload(action, config, hostId, message) {
   const detail = sessionDetails[action];
-  const body = embed(detail.title, message || detail.text, detail.color, config.banner)
-    .addFields({ name: 'Server Code', value: config.code, inline: true },
-      { name: 'Session Host', value: `<@${hostId}>`, inline: true });
-  return { content: config.pingRoleId ? `<@&${config.pingRoleId}>` : undefined,
-    embeds: [body], components: [new ActionRowBuilder().addComponents(new ButtonBuilder()
-      .setLabel('Quick Join').setStyle(ButtonStyle.Link).setURL(`https://erlc.gg/join/${encodeURIComponent(config.code)}`))],
-    allowedMentions: { parse: [], users: [], roles: config.pingRoleId ? [config.pingRoleId] : [] } };
+  const ping = config.pingRoleId ? `<@&${config.pingRoleId}>\n\n` : '';
+  const info = `\n\n**Game Information**\n> **Server Name:** ${config.serverLabel || SERVER_NAME}\n` +
+    (config.ownerLabel ? `> **Server Owner:** ${config.ownerLabel}\n` : '') +
+    `> **Join Code:** ${config.code || 'Not configured'}\n> **Session Host:** <@${hostId}>`;
+  return card(detail.title, ping + (message || detail.text) + info, { banner: 'sessions', imageURL: config.banner,
+    color: detail.color, rows: [new ActionRowBuilder().addComponents(...sessionButtons(config, action === 'end', false))],
+    mentions: { parse: [], users: [], roles: config.pingRoleId ? [config.pingRoleId] : [] } });
+}
+function sessionButtons(config, notifications = true, statusButton = false, status = 'Offline') {
+  const buttons = [];
+  if (statusButton) buttons.push(new ButtonBuilder().setCustomId('session:status').setLabel(status).setDisabled(true)
+    .setStyle(status === 'Offline' ? ButtonStyle.Danger : ButtonStyle.Success));
+  if (config.code) buttons.push(new ButtonBuilder().setLabel('Quick Join').setStyle(ButtonStyle.Link)
+    .setEmoji(SERVER_EMOJIS.link).setURL(`https://erlc.gg/join/${encodeURIComponent(config.code)}`));
+  if (notifications && config.pingRoleId) buttons.push(new ButtonBuilder().setCustomId('session:notifications')
+    .setLabel('Session Notification').setStyle(ButtonStyle.Secondary));
+  return buttons;
 }
 export function openPanel(config) {
-  return { embeds: [embed('Support Tickets', 'Need help? Open a private ticket and explain what you need.\n\nPlease keep one ticket open at a time.', COLORS.blue, config.banner)],
-    components: [new ActionRowBuilder().addComponents(new ButtonBuilder()
-      .setCustomId('ticket:open').setLabel('Open Ticket').setEmoji(SERVER_EMOJIS.ticket).setStyle(ButtonStyle.Primary))],
-    allowedMentions: { parse: [] } };
+  return card('Support Tickets', 'Welcome to our **Support Channel**. Choose the assistance you need from the menu below.\n\n' +
+    '> Please explain your request clearly and allow our team time to respond. You may have one support ticket open at a time.', {
+    banner: 'support', imageURL: config.banner,
+    rows: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('ticket:type')
+      .setPlaceholder('Choose assistance').addOptions(...Object.entries(TICKET_TYPES).map(([value, type]) =>
+        ({ label: type.label, value, description: type.description, emoji: SERVER_EMOJIS.ticket })))),
+    new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ticket:faq').setLabel('Ticket FAQ')
+      .setEmoji(SERVER_EMOJIS.support).setStyle(ButtonStyle.Secondary))] });
 }
 export function homePanel(settings, guildId) {
   const buttons = [];
@@ -60,41 +76,69 @@ export function homePanel(settings, guildId) {
     .setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guildId}/${settings.sessions.channelId}`));
   if (settings.tickets.panelChannelId) buttons.push(new ButtonBuilder().setLabel('Support').setEmoji(SERVER_EMOJIS.support)
     .setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guildId}/${settings.tickets.panelChannelId}`));
-  return { embeds: [embed(SERVER_NAME,
+  return card(SERVER_NAME,
     'Welcome to **Alaska State Roleplay**. We hope you enjoy your time in our community.\n\n' +
-    'Find our latest roleplay sessions in the sessions channel. If you need assistance, open a private ticket through Support.')],
-    components: buttons.length ? [new ActionRowBuilder().addComponents(...buttons)] : [], allowedMentions: { parse: [] } };
+    'Find our latest roleplay sessions in the sessions channel. If you need assistance, open a private ticket through Support.',
+    { banner: 'dashboard', rows: buttons.length ? [new ActionRowBuilder().addComponents(...buttons)] : [] });
 }
-export function sessionStatusPanel(config, current) {
+export function sessionStatusPanel(config, current, live = { connected: false }) {
   const active = current && current.status !== 'end';
-  const status = active ? ({ start: 'Online', boost: 'Online — Session Boost', full: 'Full' }[current.status] ?? 'Online') : 'Offline';
-  const body = embed('Session Status', active ? 'An Alaska State Roleplay session is active.' :
-    'There is no active session. Session announcements will be posted in this channel.', active ? COLORS.green : COLORS.red, config.banner)
-    .addFields({ name: 'Status', value: status, inline: true },
-      { name: 'Server Code', value: config.code || 'Join details will be posted before the next session.', inline: true });
-  if (active && current.hostId) body.addFields({ name: 'Session Host', value: `<@${current.hostId}>`, inline: true });
-  const buttons = config.code ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Quick Join')
-    .setEmoji(SERVER_EMOJIS.link).setStyle(ButtonStyle.Link).setURL(`https://erlc.gg/join/${encodeURIComponent(config.code)}`))] : [];
-  return { embeds: [body], components: buttons, allowedMentions: { parse: [] } };
+  const status = active ? (current.status === 'full' ? 'Full' : 'Online') : 'Offline';
+  const effective = { ...config, code: live.connected && live.code ? live.code : config.code };
+  return card('Session Status', 'Welcome to **Alaska State Roleplay** sessions. Our staff team manages session announcements in this channel.\n\n' +
+    (active ? `**Session host:** <@${current.hostId}>` : 'Watch this channel for the next session startup.') +
+    (!live.connected ? '\n-# Live player statistics are currently unavailable.' : ''), {
+    banner: 'sessions', imageURL: config.banner, color: active ? COLORS.green : COLORS.red,
+    metrics: [
+      { name: 'Players', description: 'How many players are in-game', value: live.connected ? `${live.players}/${live.maxPlayers}` : 'Unavailable' },
+      { name: 'Queue', description: 'How many players are waiting to join', value: live.connected ? live.queue : 'Unavailable' },
+      { name: 'Staff', description: 'How many staff are in-game moderating', value: live.connected ? live.staff : 'Unavailable' }],
+    rows: [new ActionRowBuilder().addComponents(...sessionButtons(effective, true, true, status))] });
 }
-export function ticketPanel(ticket, banner = null) {
-  return { embeds: [embed(`Support Ticket #${ticket.id}`,
-    `**Opened by:** <@${ticket.owner_id}>\n**Status:** ${ticket.claimed_by ? `Claimed by <@${ticket.claimed_by}>` : 'Unclaimed'}\n\n**Request**\n${ticket.subject}`,
-    COLORS.blue, banner)], components: [new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`ticket:claim:${ticket.id}`).setLabel(ticket.claimed_by ? 'Unclaim' : 'Claim Ticket')
+export function affiliationsPanel(settings, guildId) {
+  return card('Affiliations', 'Interested in affiliating with **Alaska State Roleplay**?\n\nOpen a support ticket and share your community information so our team can review your enquiry.', {
+    banner: 'affiliations', rows: settings.tickets.panelChannelId ? [new ActionRowBuilder().addComponents(new ButtonBuilder()
+      .setLabel('Contact Support').setStyle(ButtonStyle.Link).setEmoji(SERVER_EMOJIS.support)
+      .setURL(`https://discord.com/channels/${guildId}/${settings.tickets.panelChannelId}`))] : [] });
+}
+export function ticketPanel(ticket, banner = null, notify = false) {
+  const details = ticketDetails(ticket);
+  const joined = details.joinedAt ? `<t:${Math.floor(details.joinedAt / 1000)}:F>` : 'Unavailable';
+  return card(`Support Ticket #${ticket.id}`, (notify ? `<@${ticket.owner_id}> <@&${ticket.support_role_id}>\n\n` : '') +
+    `Thank you for contacting our team. Please be patient while we review your request.\n\n` +
+    `**Information**\n- **User:** <@${ticket.owner_id}>\n- **ID:** ${ticket.owner_id}\n- **Joined:** ${joined}\n` +
+    `- **Type:** ${TICKET_TYPES[details.type]?.label || 'General Support'}\n` +
+    `- **Status:** ${ticket.claimed_by ? `Claimed by <@${ticket.claimed_by}>` : 'Unclaimed'}\n\n**Ticket Form**\n` +
+    (details.reportedUserId ? `- **Staff:** <@${details.reportedUserId}>\n` : '') + `- **Inquiry:** ${ticket.subject}`, {
+    banner: 'support', imageURL: banner, rows: [new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`ticket:${ticket.claimed_by ? 'unclaim' : 'claim'}:${ticket.id}`).setLabel(ticket.claimed_by ? 'Unclaim' : 'Claim Ticket')
       .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`ticket:close:${ticket.id}`).setLabel('Close Ticket').setStyle(ButtonStyle.Danger))],
-    allowedMentions: { parse: [] } };
+    new ButtonBuilder().setCustomId(`ticket:close:${ticket.id}`).setLabel('Close Ticket').setStyle(ButtonStyle.Danger)),
+    new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`ticket:actions:${ticket.id}`).setPlaceholder('Ticket controls')
+      .addOptions({ label: 'Export transcript', value: 'transcript' }, { label: 'Request closure', value: 'request' }, { label: 'Rename ticket', value: 'rename' }))],
+    mentions: notify ? { parse: [], users: [ticket.owner_id], roles: [ticket.support_role_id] } : { parse: [] } });
 }
-export function ticketModal() {
-  return new ModalBuilder().setCustomId('ticket:create').setTitle('Open a Support Ticket')
-    .addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder()
-      .setCustomId('subject').setLabel('How can we help?').setStyle(TextInputStyle.Paragraph)
+export function ticketModal(type = 'general') {
+  const modal = new ModalBuilder().setCustomId(`ticket:create:${type}`).setTitle('Ticket Form');
+  if (type === 'internal') modal.addLabelComponents(new LabelBuilder().setLabel('Staff member')
+    .setUserSelectMenuComponent(new UserSelectMenuBuilder().setCustomId('staff').setMinValues(1).setMaxValues(1)));
+  return modal.addLabelComponents(new LabelBuilder().setLabel(type === 'internal' ? 'Reason for the report' : 'How can we help?')
+    .setTextInputComponent(new TextInputBuilder().setCustomId('subject').setStyle(TextInputStyle.Paragraph)
       .setMinLength(5).setMaxLength(1000).setRequired(true)));
 }
-export function closeModal(id) {
-  return new ModalBuilder().setCustomId(`ticket:finish:${id}`).setTitle('Close Ticket')
-    .addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder()
-      .setCustomId('reason').setLabel('Reason for closing').setStyle(TextInputStyle.Paragraph)
-      .setMinLength(3).setMaxLength(500).setRequired(true)));
+export function closeModal(id, customId = `ticket:finish:${id}`, value = '') {
+  const input = new TextInputBuilder().setCustomId('reason').setStyle(TextInputStyle.Paragraph).setMinLength(3).setMaxLength(500).setRequired(true);
+  if (value) input.setValue(value.slice(0,500));
+  return new ModalBuilder().setCustomId(customId).setTitle('Close Ticket').addLabelComponents(
+    new LabelBuilder().setLabel('Reason for closing').setTextInputComponent(input));
 }
+export function votePanel(vote, voters, config) {
+  return card('Session Vote', (config.pingRoleId ? `<@&${config.pingRoleId}>\n\n` : '') +
+    `> Cast your vote for the next session. We require **${vote.goal} votes**. Please only vote if you intend to join.\n\n` +
+    (vote.state === 'passed' ? '**The vote target has been reached. Please wait for a staff startup announcement.**' : vote.state === 'closed' ? 'This session vote has ended.' : 'Use the vote button below to participate.'), {
+    banner: 'sessions', imageURL: config.banner, rows: [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`session:vote:${vote.id}`).setLabel(`${voters.length}/${vote.goal}`).setStyle(ButtonStyle.Primary).setDisabled(vote.state !== 'open'),
+      new ButtonBuilder().setCustomId(`session:voters:${vote.id}`).setLabel('View Voters').setStyle(ButtonStyle.Secondary))],
+    mentions: { parse: [], users: [], roles: config.pingRoleId ? [config.pingRoleId] : [] } });
+}
+export function ticketNotice(title, text, rows = []) { return card(title, text, { rows }); }

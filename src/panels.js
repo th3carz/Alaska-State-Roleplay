@@ -1,27 +1,31 @@
 import { ChannelType, PermissionFlagsBits as P } from 'discord.js';
 import { GUILD_ID, SERVER_NAME } from './store.js';
-import { homePanel, sessionStatusPanel, openPanel } from './ui.js';
+import { homePanel, sessionStatusPanel, openPanel, affiliationsPanel } from './ui.js';
+import { componentText, editPayload } from './layout.js';
 
-const titles = { home: SERVER_NAME, sessions: 'Session Status', support: 'Support Tickets' };
+const titles = { home: SERVER_NAME, sessions: 'Session Status', support: 'Support Tickets', affiliations: 'Affiliations' };
 export function isOurPanel(message, kind, botId) {
-  return message.author?.id === botId && message.embeds?.some(e => e.title === titles[kind]);
+  return message.author?.id === botId && (message.embeds?.some(e => e.title === titles[kind]) ||
+    componentText(message.components || []).split('\n').includes(`## ${titles[kind]}`));
 }
 
 export class Panels {
   constructor(bot) { this.bot = bot; }
-  definitions() {
+  definitions(live = { connected: false }) {
     const settings = this.bot.store.settings();
     return [
       { kind: 'home', channelId: settings.panels.homeChannelId, payload: homePanel(settings, GUILD_ID) },
       { kind: 'sessions', channelId: settings.sessions.channelId,
-        payload: sessionStatusPanel(settings.sessions, this.bot.store.session()) },
+        payload: sessionStatusPanel(settings.sessions, this.bot.store.session(), live) },
       { kind: 'support', channelId: settings.tickets.panelChannelId, payload: openPanel(settings.tickets) },
+      { kind: 'affiliations', channelId: settings.panels.affiliationChannelId, payload: affiliationsPanel(settings, GUILD_ID) },
     ];
   }
   async sync(guild) {
     if (guild.id !== GUILD_ID || !this.bot.store.settings().panels.enabled) return [];
     const results = [];
-    for (const panel of this.definitions()) {
+    const live = await this.bot.sessions.erlc.snapshot();
+    for (const panel of this.definitions(live)) {
       if (!panel.channelId) continue;
       try { results.push({ kind: panel.kind, ...await this.ensure(guild, panel) }); }
       catch (error) {
@@ -38,7 +42,7 @@ export class Panels {
       const channel = await this.bot.channel(guild, channelId, ChannelType.GuildText);
       const me = await this.bot.botMember(guild);
       const permissions = channel.permissionsFor(me);
-      const required = [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.EmbedLinks];
+      const required = [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.EmbedLinks, ...(payload.files?.length ? [P.AttachFiles] : [])];
       if (!permissions?.has(required)) {
         const missing = permissions?.missing(required) ?? ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'EmbedLinks'];
         throw new Error(`Missing channel permissions: ${missing.join(', ')}`);
@@ -65,7 +69,7 @@ export class Panels {
         }
       }
       const action = message ? 'updated' : 'created';
-      const result = message ? await message.edit(payload) : await channel.send(payload);
+      const result = message ? await message.edit(editPayload(payload)) : await channel.send(payload);
       this.bot.store.savePanel(kind, channelId, result.id);
       console.log(`Auto panel ${kind} ${action}: channel=${channelId} message=${result.id}`);
       return { action, channelId, messageId: result.id };

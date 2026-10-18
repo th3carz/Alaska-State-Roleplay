@@ -5,22 +5,23 @@ Discord server: `1534042183559282819`
 Bot application: `1561501281355300895`  
 Repository: [th3carz/Alaska-State-Roleplay](https://github.com/th3carz/Alaska-State-Roleplay)
 
-[Invite Alaska Operations to Alaska State Roleplay](https://discord.com/oauth2/authorize?client_id=1561501281355300895&scope=bot%20applications.commands&permissions=335662096&guild_id=1534042183559282819&disable_guild_select=true)
+[Invite Alaska Operations to Alaska State Roleplay](https://discord.com/oauth2/authorize?client_id=1561501281355300895&scope=bot%20applications.commands&permissions=2251800149347344&guild_id=1534042183559282819&disable_guild_select=true)
 
 This standalone Discord bot contains exactly three functional systems: welcome messages, ER:LC sessions, and private support tickets. The configuration, welcome-preview, and server-scan commands support those systems. It does not include payments, verification, moderation, orders, or a website.
 
 ## What is included
 
 - Welcome messages: member mention, avatar, member count, customizable message and optional banner. Variables: `{user}`, `{username}`, `{server}`, `{memberCount}`. Bot accounts are skipped. `/welcome-test` previews the result privately.
-- ER:LC sessions: `/session start`, `/session boost`, `/session full`, `/session end`; optional custom message on each announcement; server code, host, Quick Join button, optional session ping role and banner. Session staff or members with Manage Server can run these commands. State persists across restarts. This is a manual announcement system; there is no API integration, live player count, automatic detection, or voting.
-- Tickets: a public Open Ticket panel, request form, private support channels, one open ticket per member, claim/unclaim buttons and commands, and closure with a required reason. The opener and support staff can close a ticket. Only staff can claim; members cannot claim their own ticket. A full HTML message transcript is uploaded to the configured private log channel before the ticket channel is deleted. If export or upload fails, the channel stays open. State and claims persist across restarts.
+- ER:LC sessions: banner-first status card, player/max-player, queue and in-game staff counts, Online/Offline status, Quick Join, and a self-service Session Notification role button. `/session vote votes:N` opens a vote with one vote per member, a counter, and View Voters. Reaching the target ends voting; staff still choose when to start. Startup, boost, full, and shutdown announcements include the host and game information. Staff control the session state; API counts do not automatically start or end sessions.
+- Tickets: a support banner, assistance-type dropdown (General Support, Internal Affairs Support, Management Support), and Ticket FAQ. General/management forms ask for an inquiry; Internal Affairs asks for the staff member and reason. Private channels have pinned information where permitted, claim/unclaim controls, red/green status names, user/role access controls, renaming, transcript export, closure requests with Close/Keep Open, and closure with a required reason. One active ticket per member is enforced. A full HTML transcript is uploaded to the private log channel before deletion; export/upload failure keeps the ticket open.
+- Supplied Dashboard, Sessions, Support, and Affiliations PNGs are bundled unchanged in `assets/banners/`. Discord Components V2 places each banner above the card text and controls. Affiliations is an information card linking to support.
 
 ## Before first launch
 
 1. Open application **1561501281355300895** in the [Discord Developer Portal](https://discord.com/developers/applications/1561501281355300895). Its requested bot name is **Alaska Operations**. Use this application's token; the bot refuses startup with another application's token.
 2. On its Bot page, enable **Server Members Intent** and **Message Content Intent**. Members Intent supports joining-member welcomes. Message Content Intent allows readable message transcripts.
 3. Use the invite link above to add that application to server `1534042183559282819` with scopes `bot` and `applications.commands`.
-4. Grant the bot **View Channels, Send Messages, Embed Links, Attach Files, Read Message History, Manage Channels, Manage Roles, and Change Nickname** in the relevant channels/category. Manage Roles is needed to update ticket permission overwrites while closing. The bot does not need Administrator. If your chosen session ping role is not mentionable, the bot also needs Mention Everyone in the sessions channel.
+4. Grant the bot **View Channels, Send Messages, Embed Links, Attach Files, Read Message History, Manage Channels, Manage Roles, Pin Messages, and Change Nickname** in the relevant channels/category. Put the bot's highest role above the Sessions notification role so it can assign/remove that role. Pin Messages is optional for pinning ticket headers. The bot does not need Administrator. If your chosen session ping role is not mentionable, the bot also needs Mention Everyone in the sessions channel.
 5. Create/select a welcome channel, sessions channel, ticket category, support role, and **private staff transcript channel**. Ensure the transcript channel is visible only to the intended staff. The bot rejects transcript channels visible to @everyone.
 6. Install **Node.js 24**, then run `npm ci` in this project directory.
 7. Copy `.env.example` to `.env` and enter the bot token locally, or set `DISCORD_TOKEN` privately in your host's environment settings. Never commit or post the token. No token is included in this package.
@@ -38,16 +39,20 @@ The customer's 2026-10-18 scan now supplies the missing channel and role setting
 | Home / welcome panel | `#home` (`1560914196898643969`) |
 | Permanent session status panel and session announcements | `#sessions` (`1560914589066072074`) |
 | Support / Open Ticket panel | `#support` (`1560914284979167252`) |
+| Affiliations information panel | `#affiliations` (`1560915371865935882`) |
 | New private tickets | Tickets category (`1553703456055763115`) |
 | Ticket transcripts | `#ticket-transcripts` (`1553703567314002021`) |
 | Session and ticket staff | Staff team (`1560951618361499718`) |
 | Session announcement ping | Sessions (`1560951687429099552`) |
+| Internal Affairs reports | Management Team (`1553703181282709506`) |
+| Management support | Oversight (`1553703178023997493`) |
+| Additional ticket leadership access | Ownership (`1560949789141766184`), Oversight (`1553703178023997493`) |
 
-Existing non-empty settings are preserved, and this seed runs once. The ER:LC join code is not present in a server scan; set it with `/configure sessions` before starting a session.
+Existing non-empty settings are preserved, and these seeds run once. The supplied session reference provides the default code **Alaskasrp**, display name **Alaska State Roleplay | VC Only**, and owner label **AEMeoow**. Change them through `/configure sessions` if needed. With an API key, a valid live join code takes precedence.
 
-The bot automatically posts/updates the Home, Session Status, and Support panels on startup, after configuration changes, and every five minutes. It restores deleted tracked panels. It keeps each panel message ID and checks existing bot-owned panel messages before creating one, including after local database loss. Member welcome messages are sent only when a human member joins; startup does not fabricate member joins or announce a session startup.
+The bot automatically posts/updates the Home, Session Status, Support, and Affiliations panels on startup, after configuration changes, and every minute. It restores deleted tracked panels. It keeps each panel message ID and checks existing bot-owned panel messages before creating one, including after local database loss. Member welcome messages are sent only when a human member joins; startup does not fabricate member joins or announce a session startup.
 
-Use `/configure panels enabled:false` to stop automatic panel maintenance, or set `home`/`support` to move their destinations. `/ticket panel` also reuses the existing support panel rather than posting another copy. Channel history must be readable for duplicate checks. The persistent session status panel updates after `/session start`, `/session boost`, `/session full`, and `/session end`.
+Use `/configure panels enabled:false` to stop automatic panel maintenance, or set `home`/`support`/`affiliations` to move their destinations. `/ticket panel` and `/session panel` reuse their panels. Channel history must be readable for duplicate checks. The permanent session panel updates after session announcements and on its refresh timer.
 
 Run these as a member with **Manage Server**, choosing the actual channels and roles in Discord:
 
@@ -62,12 +67,20 @@ Run these as a member with **Manage Server**, choosing the actual channels and r
 Optional setup parameters:
 
 - Welcome: `message`, `banner`, `enabled`.
-- Sessions: `ping-role`, `banner`, `clear-ping`.
-- Tickets: `banner`.
-- Use `banner:none` to remove an image. Banners must use public HTTPS image URLs that Discord can load.
+- Sessions: `ping-role`, `banner`, `clear-ping`, `server-name`, `owner-name`.
+- Tickets: `banner`, `report-role`, `management-role`.
+- Use public HTTPS image URLs for custom banners. `banner:none` clears a custom override, restoring the supplied Sessions/Support banner; it removes an optional welcome image.
 - Use `/configure view` to inspect saved channel/role IDs and the ER:LC server code privately.
 
 Each configuration command preserves omitted optional settings. Changing the support role/log channel affects newly opened tickets; existing tickets retain their original support role and transcript destination.
+
+Internal Affairs tickets route to the configured report role and leadership; they exclude the general Staff team role. The reported staff member gets an explicit View Channel denial. Discord administrators still bypass channel permission restrictions. Management tickets route to the senior management role and leadership. General tickets use the support role and leadership.
+
+## Live ER:LC counts
+
+Set **ERLC_API_KEY** privately in the Railway service variables (or local `.env`) to enable player/max-player, queue, and in-game staff counts. The bot calls the official combined ER:LC v2 server endpoint at most once per minute, shares concurrent requests, respects rate-limit delays, and stops retrying rejected credentials until restart. Staff counts include players whose in-game permission is Server Owner, Server Administrator, or Server Moderator.
+
+Without a key, the notification button, voting, Quick Join, announcements, and tickets work normally; live metrics display **Unavailable**. Failed or malformed requests also display Unavailable rather than invented zero counts. The key and player list are never included in panels or `/scan`.
 
 ## Everyday commands
 
@@ -80,12 +93,20 @@ Each configuration command preserves omitted optional settings. Changing the sup
 | `/session boost [message]` | Session staff or Manage Server; boost an active session |
 | `/session full [message]` | Session staff or Manage Server; mark active session full |
 | `/session end [message]` | Session staff or Manage Server; end active session |
+| `/session startup` / `/session shutdown` | Aliases for start/end |
+| `/session panel` | Session staff or Manage Server; refresh the permanent panel |
+| `/session vote votes:N` | Session staff or Manage Server; open a vote while offline |
+| `/session cancel-vote` | Session staff or Manage Server; cancel an open vote |
 | `/ticket panel [channel]` | Manage Server; post the ticket-opening panel |
 | `/ticket claim` | Support staff; claim the current ticket |
 | `/ticket unclaim` | Assigned staff or Manage Server; release current claim |
 | `/ticket close reason:...` | Ticket opener or support staff; archive then delete |
+| `/ticket request-close reason:...` | Opener or authorized support staff; ask to close |
+| `/ticket transcript` | Opener or authorized support staff; export without deletion |
+| `/ticket rename name:...` | Authorized support staff; preserve type/status prefix |
+| `/ticket add target:...` / `/ticket remove target:...` | Authorized support staff; change user/role access |
 
-Welcome messages mention only the joining member. Session announcements mention only the configured session ping role. Arbitrary @everyone text in a custom message does not create a mass ping. Old session announcement buttons are retired when a new session announcement is posted, when the bot can edit the earlier message.
+Welcome messages mention only the joining member. Session announcements mention only the configured session ping role. Arbitrary @everyone text does not create a mass ping. Earlier announcements retain their Quick Join/notification controls as in the reference. Old vote buttons validate the stored message and voting state; repeated votes do not increase the count. Only the assigned staff member or a server manager can release a claim. Repeated Claim clicks cannot unclaim a ticket.
 
 ## Exporting the server with /scan
 
@@ -97,17 +118,19 @@ Channel order follows the server's category/type grouping and snowflake tie orde
 
 ## Persistent hosting
 
-Run **one instance / one replica**. SQLite holds settings, session state, ticket IDs, and claims. Set `DATABASE_PATH` to a file on persistent storage, for example `/data/alaska.sqlite`, and mount your host's persistent disk at `/data`. The default is `./data/alaska.sqlite`. Ephemeral container disks lose the database during redeploys. Back up the persistent disk/database regularly. A database loss can orphan existing ticket channels.
+Run **one instance / one replica**. SQLite holds settings, panel IDs, session state, votes/voters, ticket IDs, claims, participants, and closure requests. On Railway the app automatically uses `RAILWAY_VOLUME_MOUNT_PATH/alaska.sqlite` when a persistent volume is mounted. `PERSISTENT_DATABASE_PATH` can explicitly override that path. Otherwise it uses `DATABASE_PATH`, falling back to `./data/alaska.sqlite`. Mount a persistent disk and back it up regularly; ephemeral container disks lose their data during redeploys. `DATABASE_URL` is not used by this SQLite application.
 
-Keep the working directory at the project root and use `npm start`. The process needs a persistent Discord Gateway connection. This project is source code, not a running deployment; no Discord or ER:LC credentials are bundled.
+Keep the working directory at the project root and use `npm start`. The process needs a persistent Discord Gateway connection. No Discord or ER:LC credentials are bundled.
 
 ## Transcript and recovery notes
 
 - Enable Message Content Intent both in the Developer Portal and in code (already requested by the bot). Without the portal setting, login may fail; content-limited applications cannot produce complete transcripts.
-- Transcripts include the fetched ticket-channel messages, embeds, and attachment names/URLs. They do not preserve deleted messages, edit history, reactions, thread replies, or the attached file bytes. Discord attachment URLs can expire.
+- Transcripts include the fetched ticket-channel messages, embeds, Components V2 text, and attachment names/URLs. They do not preserve deleted messages, edit history, reactions, thread replies, or the attached file bytes. Discord attachment URLs can expire.
 - Normal ticket participants are prevented from sending while a closure is exported. Discord administrators bypass channel restrictions; messages they send during the final export/delete window may be outside the transcript snapshot.
 - Exports above a conservative 8 MB limit leave the ticket open for a manual export. A failed fetch, upload, or channel deletion also preserves/reopens the ticket and attempts to restore sending permissions.
 - After a restart, the bot reconciles pending channel creations, reopens interrupted closures, and frees ticket slots whose channels were deleted. If a network timeout prevents checking whether a channel was created, the reservation is retained until restart to avoid duplicate channels.
+- After database loss, active ticket channels can be adopted only when their bot-specific topic and this application's own original ticket message agree. Existing channel access permissions are retained. This does not recreate historic votes, settings, closed-ticket records, or all ticket metadata; durable storage is still required.
+- Vote display failures are retried on the refresh timer, including after the goal was reached. A restart does not reset saved voters or reopen a finished vote.
 - Manual channel deletion outside the bot cannot capture a transcript. Use the Close Ticket flow whenever a transcript is needed.
 - If a support role or log channel is deleted, restore it or repair the affected ticket configuration/permissions. Tickets keep the original staff role and log destination recorded at creation.
 - A crash after a transcript upload but before channel deletion may leave an archive of that close attempt in the log. The surviving ticket is reopened on startup; a later close exports it again.
@@ -119,6 +142,6 @@ npm run check
 npm test
 ```
 
-Tests cover database restart persistence, duplicate-ticket prevention, repeated-click locks, authorization, private permission overwrites, claim rollback, session transitions, restricted mentions, transcript escaping/pagination, failed exports, safe closure order, and crash recovery. They run without credentials and do not contact Discord. A live welcome/join, session announcement, and ticket open/claim/close test is still required after installing the customer's bot.
+Tests cover database restart persistence, unique votes, API caching/rate limits, V2 card serialization, notification-role checks, ticket-type permissions, duplicate-ticket prevention, repeated-click locks, authorization, claim rollback, closure-request state, session transitions, restricted mentions, transcript escaping/pagination, failed exports, safe closure order, and crash recovery. They run without credentials and do not contact Discord. Exercise a welcome/join, session announcement, and ticket open/claim/close in the customer's server after installation.
 
-Reference documentation: [discord.js](https://discord.js.org/docs), [Discord Gateway intents](https://docs.discord.com/developers/events/gateway#gateway-intents), [Discord permissions](https://docs.discord.com/developers/topics/permissions). ER:LC Quick Join links use `https://erlc.gg/join/CODE`.
+Reference documentation: [discord.js](https://discord.js.org/docs), [Discord components](https://docs.discord.com/developers/components/reference), [Discord Gateway intents](https://docs.discord.com/developers/events/gateway#gateway-intents), [Discord permissions](https://docs.discord.com/developers/topics/permissions), [ER:LC API](https://apidocs.erlc.gg/api-reference/fetch-server-information). ER:LC Quick Join links use `https://erlc.gg/join/CODE`.

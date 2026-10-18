@@ -1,5 +1,6 @@
 import { AttachmentBuilder } from 'discord.js';
 import { SERVER_NAME } from './store.js';
+import { componentText } from './layout.js';
 
 export const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -9,7 +10,8 @@ export function renderTranscript(ticket, messages, closer, reason) {
     const files = [...m.attachments.values()].map(a => `<p>Attachment: ${escapeHtml(a.name)} — ${escapeHtml(a.url)}</p>`).join('');
     const embeds = m.embeds.map(e => `<pre>${escapeHtml([e.title, e.description,
       ...(e.fields ?? []).map(f => `${f.name}: ${f.value}`)].filter(Boolean).join('\n'))}</pre>`).join('');
-    return `<article><header>${escapeHtml(m.author?.tag ?? 'Unknown user')} (${escapeHtml(m.author?.id ?? 'unknown')}) · ${escapeHtml(new Date(m.createdTimestamp).toISOString())}</header><pre>${escapeHtml(m.content)}</pre>${files}${embeds}</article>`;
+    const components = componentText(m.components || []);
+    return `<article><header>${escapeHtml(m.author?.tag ?? 'Unknown user')} (${escapeHtml(m.author?.id ?? 'unknown')}) · ${escapeHtml(new Date(m.createdTimestamp).toISOString())}</header><pre>${escapeHtml(m.content)}</pre>${components ? `<pre>${escapeHtml(components)}</pre>` : ''}${files}${embeds}</article>`;
   }).join('\n');
   return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Ticket ${ticket.id} transcript</title><style>body{font:15px system-ui;background:#eef3f6;color:#172b3a;max-width:960px;margin:32px auto;padding:0 20px}article{background:white;border:1px solid #d6e1e7;border-radius:8px;padding:16px;margin:12px 0}header{font-weight:600;color:#34637a}pre{font:inherit;white-space:pre-wrap;overflow-wrap:anywhere}p{overflow-wrap:anywhere}</style><h1>${SERVER_NAME} — Ticket #${ticket.id}</h1><p>Opened by: ${escapeHtml(ticket.owner_id)} · Claimed by: ${escapeHtml(ticket.claimed_by ?? 'Unclaimed')}</p><p>Closed by: ${escapeHtml(closer)} · Reason: ${escapeHtml(reason)}</p><p>Request: ${escapeHtml(ticket.subject)}</p><p>Attachments are recorded as names and URLs; Discord attachment links may expire. Deleted messages, thread replies, reactions, and edit history are not included.</p>${rows}</html>`;
 }

@@ -6,6 +6,8 @@ import { Store, GUILD_ID, APPLICATION_ID } from '../src/store.js';
 import { SERVER_SETTINGS, SERVER_SEED_KEY } from '../src/server-config.js';
 import { isOurPanel } from '../src/panels.js';
 import { homePanel, sessionStatusPanel, openPanel } from '../src/ui.js';
+import { componentText } from '../src/layout.js';
+const flatten = components => components.flatMap(c => { const x = c.toJSON ? c.toJSON() : c; return [x, ...flatten(x.components || [])]; });
 
 function fixture(t) {
   const store = new Store(':memory:');
@@ -16,7 +18,7 @@ function fixture(t) {
   let nextId = 1000;
   const stats = { sends: 0, edits: 0, fetches: 0 };
   const channel = { id: 'channel', name: 'support',
-    permissionsFor: () => new PermissionsBitField([P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.EmbedLinks]),
+    permissionsFor: () => new PermissionsBitField([P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.EmbedLinks, P.AttachFiles]),
     messages: { fetch: async options => {
       stats.fetches++;
       if (options.message) {
@@ -28,8 +30,9 @@ function fixture(t) {
       return new Collection(eligible.map(m => [m.id, m]));
     } }, send: async payload => {
       stats.sends++;
-      const message = { id: String(nextId++), author: { id: APPLICATION_ID }, embeds: payload.embeds.map(e => e.toJSON()),
-        edit: async newPayload => { stats.edits++; message.embeds = newPayload.embeds.map(e => e.toJSON()); return message; } };
+      const message = { id: String(nextId++), author: { id: APPLICATION_ID }, embeds: (payload.embeds || []).map(e => e.toJSON()),
+        components: payload.components.map(c => c.toJSON()),
+        edit: async newPayload => { stats.edits++; message.embeds = (newPayload.embeds || []).map(e => e.toJSON()); message.components = newPayload.components.map(c => c.toJSON()); return message; } };
       messages.set(message.id, message);
       return message;
     } };
@@ -129,12 +132,13 @@ test('home links use scanned channels and an unconfigured session code produces 
   const { store } = fixture(t);
   const settings = store.settings();
   const home = homePanel(settings, GUILD_ID);
-  const urls = home.components[0].toJSON().components.map(b => b.url);
+  const urls = flatten(home.components).map(b => b.url);
   assert.ok(urls.includes(`https://discord.com/channels/${GUILD_ID}/1560914284979167252`));
   const offline = sessionStatusPanel(settings.sessions, null);
-  assert.equal(offline.components.length, 0);
-  assert.equal(offline.embeds[0].data.fields[0].value, 'Offline');
+  assert.ok(!flatten(offline.components).some(c => c.url?.startsWith('https://erlc.gg/')));
+  assert.ok(flatten(offline.components).some(c => c.label === 'Offline'));
   const active = sessionStatusPanel({ ...settings.sessions, code: 'ASRP' }, { status: 'full', hostId: 'staff' });
-  assert.equal(active.embeds[0].data.fields[0].value, 'Full');
-  assert.equal(active.components[0].toJSON().components[0].url, 'https://erlc.gg/join/ASRP');
+  assert.ok(flatten(active.components).some(c => c.label === 'Full'));
+  assert.ok(flatten(active.components).some(c => c.url === 'https://erlc.gg/join/ASRP'));
+  assert.ok(componentText(active.components).includes('Session Status'));
 });

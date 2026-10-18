@@ -9,9 +9,10 @@ export const BOT_NAME = 'Alaska Operations';
 export const defaults = Object.freeze({
   welcome: { enabled: true, channelId: null, banner: null,
     message: 'Welcome to **Alaska State Roleplay**, {user}!\nWe hope you enjoy your time with us. You are member **#{memberCount}**.' },
-  sessions: { channelId: null, code: null, staffRoleId: null, pingRoleId: null, banner: null },
-  tickets: { categoryId: null, supportRoleId: null, logChannelId: null, banner: null, panelChannelId: null },
-  panels: { enabled: true, homeChannelId: null },
+  sessions: { channelId: null, code: null, staffRoleId: null, pingRoleId: null, banner: null, serverLabel: 'Alaska State Roleplay | VC Only', ownerLabel: null },
+  tickets: { categoryId: null, supportRoleId: null, logChannelId: null, banner: null, panelChannelId: null,
+    reportRoleId: null, managementRoleId: null, leadershipRoleIds: [] },
+  panels: { enabled: true, homeChannelId: null, affiliationChannelId: null },
 });
 
 export class Store {
@@ -36,7 +37,21 @@ export class Store {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS one_active_ticket_per_owner
       ON tickets(owner_id) WHERE state IN ('creating','open','closing');
+      CREATE TABLE IF NOT EXISTS session_votes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, goal INTEGER NOT NULL CHECK(goal>0),
+        host_id TEXT NOT NULL, channel_id TEXT NOT NULL, message_id TEXT,
+        state TEXT NOT NULL DEFAULT 'creating', needs_refresh INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS one_session_vote ON session_votes((1)) WHERE state IN ('creating','open');
+      CREATE TABLE IF NOT EXISTS session_vote_users (
+        vote_id INTEGER NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY(vote_id,user_id)
+      );
     `);
+    if (!this.db.prepare('PRAGMA table_info(tickets)').all().some(c => c.name === 'details'))
+      this.db.exec("ALTER TABLE tickets ADD COLUMN details TEXT NOT NULL DEFAULT '{}'");
+    if (!this.db.prepare('PRAGMA table_info(session_votes)').all().some(c => c.name === 'needs_refresh'))
+      this.db.exec('ALTER TABLE session_votes ADD COLUMN needs_refresh INTEGER NOT NULL DEFAULT 1');
   }
   settings() {
     const row = this.db.prepare('SELECT value FROM settings WHERE id=1').get();
@@ -58,7 +73,7 @@ export class Store {
       for (const [section, values] of Object.entries(seed)) {
         const current = this.settings()[section];
         if (!current) throw new Error('Invalid server seed section');
-        const patch = Object.fromEntries(Object.entries(values).filter(([key]) => current[key] == null));
+        const patch = Object.fromEntries(Object.entries(values).filter(([key]) => current[key] == null || (Array.isArray(current[key]) && current[key].length === 0)));
         if (Object.keys(patch).length) this.configure(section, patch);
       }
       this.db.prepare('INSERT INTO migrations(id) VALUES (?)').run(migrationId);
@@ -79,25 +94,49 @@ export class Store {
     this.db.prepare('INSERT INTO sessions VALUES (1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value')
       .run(JSON.stringify(value));
   }
-  reserveTicket(owner, subject, config) {
-    const result = this.db.prepare('INSERT INTO tickets(owner_id,subject,log_channel_id,support_role_id) VALUES (?,?,?,?)')
-      .run(owner, subject, config.logChannelId, config.supportRoleId);
+  reserveTicket(owner, subject, config, details = {}) {
+    const result = this.db.prepare('INSERT INTO tickets(owner_id,subject,log_channel_id,support_role_id,details) VALUES (?,?,?,?,?)')
+      .run(owner, subject, config.logChannelId, config.supportRoleId, JSON.stringify(details));
     return this.ticket(Number(result.lastInsertRowid));
   }
   ticket(id) { return this.db.prepare('SELECT * FROM tickets WHERE id=?').get(id); }
+  importTicket(id, ownerId, channelId, subject, config, details, panelId, claimedBy, createdAt) {
+    this.db.prepare(`INSERT INTO tickets(id,owner_id,channel_id,subject,log_channel_id,support_role_id,details,panel_id,claimed_by,state,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,'open',?)`).run(id,ownerId,channelId,subject,config.logChannelId,config.supportRoleId,
+        JSON.stringify(details),panelId,claimedBy,createdAt);
+    return this.ticket(id);
+  }
   forChannel(id) { return this.db.prepare('SELECT * FROM tickets WHERE channel_id=?').get(id); }
   activeForOwner(id) {
     return this.db.prepare("SELECT * FROM tickets WHERE owner_id=? AND state IN ('creating','open','closing')").get(id);
   }
   activeTickets() { return this.db.prepare("SELECT * FROM tickets WHERE state IN ('creating','open','closing')").all(); }
   updateTicket(id, patch) {
-    const fields = new Set(['channel_id','panel_id','claimed_by','state','close_reason','closed_by','closed_at','transcript_id']);
+    const fields = new Set(['channel_id','panel_id','claimed_by','state','close_reason','closed_by','closed_at','transcript_id','details']);
     const keys = Object.keys(patch);
     if (!keys.length || keys.some(k => !fields.has(k))) throw new Error('Invalid ticket update');
     this.db.prepare(`UPDATE tickets SET ${keys.map(k => `${k}=?`).join(',')} WHERE id=?`)
       .run(...keys.map(k => patch[k]), id);
     return this.ticket(id);
   }
+  vote(id) { return this.db.prepare('SELECT * FROM session_votes WHERE id=?').get(id); }
+  openVote() { return this.db.prepare("SELECT * FROM session_votes WHERE state IN ('creating','open')").get(); }
+  newVote(goal, hostId, channelId) {
+    const result = this.db.prepare('INSERT INTO session_votes(goal,host_id,channel_id) VALUES (?,?,?)').run(goal, hostId, channelId);
+    return this.vote(Number(result.lastInsertRowid));
+  }
+  updateVote(id, state, messageId = null) {
+    this.db.prepare('UPDATE session_votes SET state=?,message_id=COALESCE(?,message_id),needs_refresh=1 WHERE id=?').run(state,messageId,id);
+    return this.vote(id);
+  }
+  voters(id) { return this.db.prepare('SELECT user_id FROM session_vote_users WHERE vote_id=? ORDER BY rowid').all(id).map(r => r.user_id); }
+  addVoter(id, userId) {
+    const added = this.db.prepare('INSERT OR IGNORE INTO session_vote_users VALUES (?,?)').run(id,userId).changes > 0;
+    if (added) this.db.prepare('UPDATE session_votes SET needs_refresh=1 WHERE id=?').run(id);
+    return added;
+  }
+  pendingVoteMessages() { return this.db.prepare('SELECT * FROM session_votes WHERE needs_refresh=1 AND message_id IS NOT NULL').all(); }
+  voteRefreshed(id) { this.db.prepare('UPDATE session_votes SET needs_refresh=0 WHERE id=?').run(id); }
   close() { this.db.close(); }
 }
 

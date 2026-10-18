@@ -4,11 +4,15 @@
   "private": true,
   "description": "Welcome messages, ER:LC sessions, and private support tickets for Alaska State Roleplay.",
   "type": "module",
-  "engines": { "node": ">=24.0.0 <25" },
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
   "scripts": {
     "start": "node src/index.js",
-    "check": "node --check src/index.js && node --check src/bot.js && node --check src/store.js && node --check src/ui.js && node --check src/commands.js && node --check src/transcript.js && node --check src/scan.js && node --check src/server-config.js && node --check src/panels.js",
+    "check": "node --check src/bot.js && node --check src/commands.js && node --check src/erlc.js && node --check src/index.js && node --check src/layout.js && node --check src/panels.js && node --check src/scan.js && node --check src/server-config.js && node --check src/sessions.js && node --check src/store.js && node --check src/ticket-extras.js && node --check src/ticket-types.js && node --check src/transcript.js && node --check src/ui.js",
     "test": "node --test"
   },
-  "dependencies": { "discord.js": "14.27.0" }
+  "dependencies": {
+    "discord.js": "14.27.0"
+  }
 }

@@ -1,6 +1,6 @@
 import { ChannelType, PermissionFlagsBits as P, MessageFlags } from 'discord.js';
 import { GUILD_ID, APPLICATION_ID, Locks } from './store.js';
-import { embed, validBanner, welcomePayload, sessionPayload, assertSessionTransition,
+import { validBanner, welcomePayload,
   openPanel, ticketPanel, ticketModal, closeModal } from './ui.js';
 import { collectTranscript } from './transcript.js';
 import { fetchServerScan, scanFiles } from './scan.js';
@@ -8,7 +8,7 @@ import { Panels } from './panels.js';
 import { Sessions } from './sessions.js';
 import { TicketExtras } from './ticket-extras.js';
 import { ticketDetails, ticketRoles, ticketName, typeConfiguration } from './ticket-types.js';
-import { editPayload, componentText } from './layout.js';
+import { card, editPayload, componentText } from './layout.js';
 import { ticketNotice } from './ui.js';
 
 const TEXT_PERMS = [P.ViewChannel, P.SendMessages, P.EmbedLinks];
@@ -88,7 +88,8 @@ export class Bot {
         else if (i.commandName === 'scan') await this.scan(i);
         else if (i.commandName === 'welcome-test') {
           await this.manager(i);
-          const payload = welcomePayload(await this.member(i), this.store.settings().welcome);
+          const settings = this.store.settings();
+          const payload = welcomePayload(await this.member(i), settings.welcome, settings.panels.homeChannelId);
           await i.editReply(payload);
         } else if (i.commandName === 'session') await this.session(i);
         else if (i.commandName === 'ticket') await this.ticketCommand(i);
@@ -132,11 +133,11 @@ export class Bot {
     if (section === 'view') {
       const settings = this.store.settings();
       const show = id => id ?? 'Not configured';
-      await i.editReply({ embeds: [embed('Bot Configuration',
+      await i.editReply(card('Bot Configuration',
         `**Welcome**\nChannel: ${show(settings.welcome.channelId)}\nEnabled: ${settings.welcome.enabled}\n\n` +
         `**Sessions**\nChannel: ${show(settings.sessions.channelId)}\nER:LC code: ${show(settings.sessions.code)}\nStaff role: ${show(settings.sessions.staffRoleId)}\nPing role: ${show(settings.sessions.pingRoleId)}\n\n` +
         `**Tickets**\nCategory: ${show(settings.tickets.categoryId)}\nSupport role: ${show(settings.tickets.supportRoleId)}\nTranscript channel: ${show(settings.tickets.logChannelId)}\n\n` +
-        `**Automatic Panels**\nEnabled: ${settings.panels.enabled}\nHome channel: ${show(settings.panels.homeChannelId)}\nSupport panel channel: ${show(settings.tickets.panelChannelId)}`)], allowedMentions: { parse: [] } });
+        `**Automatic Panels**\nEnabled: ${settings.panels.enabled}\nHome channel: ${show(settings.panels.homeChannelId)}\nSupport panel channel: ${show(settings.tickets.panelChannelId)}`));
       return;
     }
     const bot = await this.botMember(i.guild);
@@ -212,7 +213,7 @@ export class Bot {
     if (!settings.enabled || !settings.channelId) return;
     const channel = await this.channel(member.guild, settings.channelId);
     requireBotPermissions(channel, await this.botMember(member.guild), TEXT_PERMS);
-    await channel.send(welcomePayload(member, settings));
+    await channel.send(welcomePayload(member, settings, this.store.settings().panels.homeChannelId));
   }
   async session(i) { return this.sessions.command(i); }
   requireTicketConfig() {
@@ -360,9 +361,9 @@ export class Bot {
         await this.setSending(i.channel, ticket, false);
         await i.channel.send({ content: `Closing ticket #${ticket.id}. Reason: ${reason}`, allowedMentions: { parse: [] } });
         const transcript = await collectTranscript(i.channel, ticket, i.user.id, reason);
-        const archive = await logs.send({ embeds: [embed(`Ticket #${ticket.id} Closed`,
-          `**Opened by:** <@${ticket.owner_id}>\n**Closed by:** <@${i.user.id}>\n**Reason:** ${reason}`)],
-          files: [transcript], allowedMentions: { parse: [] } });
+        const archive = await logs.send(card(`Ticket #${ticket.id} Closed`,
+          `**Opened by:** <@${ticket.owner_id}>\n**Closed by:** <@${i.user.id}>\n**Reason:** ${reason}`,
+          { attachments: [transcript] }));
         this.store.updateTicket(ticket.id, { transcript_id: archive.id });
         archived = true;
         // Send the result while the interaction's channel still exists.

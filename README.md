@@ -11,10 +11,11 @@ This standalone Discord bot contains exactly three functional systems: welcome m
 
 ## What is included
 
-- Welcome messages: member mention, avatar, member count, customizable message and optional banner. Variables: `{user}`, `{username}`, `{server}`, `{memberCount}`. Bot accounts are skipped. `/welcome-test` previews the result privately.
+- Welcome messages: a compact Components V2 card with quoted welcome text, the joining member's mention, a disabled member-count button, and a Dashboard link. It posts in **#general**, with no avatar, banner, title, or footer. Variables: `{user}`, `{username}`, `{server}`, `{memberCount}`. Bot accounts are skipped. `/welcome-test` previews the result privately.
 - ER:LC sessions: banner-first status card, player/max-player, queue and in-game staff counts, Online/Offline status, Quick Join, and a self-service Session Notification role button. `/session vote votes:N` opens a vote with one vote per member, a counter, and View Voters. Reaching the target ends voting; staff still choose when to start. Startup, boost, full, and shutdown announcements include the host and game information. Staff control the session state; API counts do not automatically start or end sessions.
 - Tickets: a support banner, assistance-type dropdown (General Support, Internal Affairs Support, Management Support), and Ticket FAQ. General/management forms ask for an inquiry; Internal Affairs asks for the staff member and reason. Private channels have pinned information where permitted, claim/unclaim controls, red/green status names, user/role access controls, renaming, transcript export, closure requests with Close/Keep Open, and closure with a required reason. One active ticket per member is enforced. A full HTML transcript is uploaded to the private log channel before deletion; export/upload failure keeps the ticket open.
 - Supplied Dashboard, Sessions, Support, and Affiliations PNGs are bundled unchanged in `assets/banners/`. Discord Components V2 places each banner above the card text and controls. Affiliations is an information card linking to support.
+- Every rich bot message uses Components V2 with plain containers and no colored sidebar. No custom emojis are used in the UI unless the customer explicitly requests them later. Configuration views and transcript archives also use V2; archive files are exposed through File components so they stay downloadable.
 
 ## Before first launch
 
@@ -27,7 +28,7 @@ This standalone Discord bot contains exactly three functional systems: welcome m
 7. Copy `.env.example` to `.env` and enter the bot token locally, or set `DISCORD_TOKEN` privately in your host's environment settings. Never commit or post the token. No token is included in this package.
 8. Run `npm start`. Commands register automatically in the customer's server after login and ticket recovery. No client ID environment variable is needed.
 
-The bot refuses commands outside the fixed customer server. Command registration replaces this application's guild command list in this one server. On startup it applies **Alaska Operations** as the bot username and server nickname when Discord permits the changes. If a name change is rate limited or denied, the bot logs the issue and keeps its three systems running; the name can also be changed manually in the Developer Portal/server. Embed footers use the Alaska Operations name.
+The bot refuses commands outside the fixed customer server. Command registration replaces this application's guild command list in this one server. On startup it applies **Alaska Operations** as the bot username and server nickname when Discord permits the changes. If a name change is rate limited or denied, the bot logs the issue and keeps its three systems running; the name can also be changed manually in the Developer Portal/server. Panel footers use the Alaska Operations name.
 
 ## First-time configuration
 
@@ -35,7 +36,7 @@ The customer's 2026-10-18 scan now supplies the missing channel and role setting
 
 | Purpose | Destination |
 | --- | --- |
-| New-member welcome messages | `#alaska-state-roleplay` (`1560911382294302750`) |
+| New-member welcome messages | `#general` (`1560914979354583191`) |
 | Home / welcome panel | `#home` (`1560914196898643969`) |
 | Permanent session status panel and session announcements | `#sessions` (`1560914589066072074`) |
 | Support / Open Ticket panel | `#support` (`1560914284979167252`) |
@@ -66,10 +67,10 @@ Run these as a member with **Manage Server**, choosing the actual channels and r
 
 Optional setup parameters:
 
-- Welcome: `message`, `banner`, `enabled`.
+- Welcome: `message`, `enabled`.
 - Sessions: `ping-role`, `banner`, `clear-ping`, `server-name`, `owner-name`.
 - Tickets: `banner`, `report-role`, `management-role`.
-- Use public HTTPS image URLs for custom banners. `banner:none` clears a custom override, restoring the supplied Sessions/Support banner; it removes an optional welcome image.
+- Use public HTTPS image URLs for custom banners. `banner:none` clears a custom override, restoring the supplied Sessions/Support banner.
 - Use `/configure view` to inspect saved channel/role IDs and the ER:LC server code privately.
 
 Each configuration command preserves omitted optional settings. Changing the support role/log channel affects newly opened tickets; existing tickets retain their original support role and transcript destination.
@@ -131,6 +132,7 @@ Keep the working directory at the project root and use `npm start`. The process 
 - After a restart, the bot reconciles pending channel creations, reopens interrupted closures, and frees ticket slots whose channels were deleted. If a network timeout prevents checking whether a channel was created, the reservation is retained until restart to avoid duplicate channels.
 - After database loss, active ticket channels can be adopted only when their bot-specific topic and this application's own original ticket message agree. Existing channel access permissions are retained. This does not recreate historic votes, settings, closed-ticket records, or all ticket metadata; durable storage is still required.
 - Vote display failures are retried on the refresh timer, including after the goal was reached. A restart does not reset saved voters or reopen a finished vote.
+- A one-time style migration updates this application's existing rich messages in its configured channels and active tickets. It removes custom emoji icons and accents, converts old embeds to V2, preserves controls and existing attachments, suppresses mentions during edits, and never edits another author's messages.
 - Manual channel deletion outside the bot cannot capture a transcript. Use the Close Ticket flow whenever a transcript is needed.
 - If a support role or log channel is deleted, restore it or repair the affected ticket configuration/permissions. Tickets keep the original staff role and log destination recorded at creation.
 - A crash after a transcript upload but before channel deletion may leave an archive of that close attempt in the log. The surviving ticket is reopened on startup; a later close exports it again.

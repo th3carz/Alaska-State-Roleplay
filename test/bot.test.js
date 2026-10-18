@@ -9,6 +9,7 @@ import { Bot, ticketOverwrites, requireTicketAccess, validatePrivateLogs } from 
 import { assertSessionTransition, welcomePayload, sessionPayload } from '../src/ui.js';
 import { commands } from '../src/commands.js';
 import { collectTranscript, renderTranscript } from '../src/transcript.js';
+import { componentText } from '../src/layout.js';
 const flatten = components => components.flatMap(c => { const x = c.toJSON ? c.toJSON() : c; return [x, ...flatten(x.components || [])]; });
 
 function fixture(t) {
@@ -155,7 +156,7 @@ test('claim and unclaim persist correctly and update the visible panel', async t
 test('welcome variables render and only the joining member can be pinged', () => {
   const payload = welcomePayload({ id: '123', user: { username: 'User', displayAvatarURL: () => 'https://example.com/avatar.png' },
     guild: { memberCount: 45 } }, { message: '{user} | {username} | {server} | {memberCount} @everyone' });
-  assert.match(payload.embeds[0].data.description, /<@123> \| User \| Alaska State Roleplay \| 45/);
+  assert.match(componentText(payload.components), /<@123> \| User \| Alaska State Roleplay \| 45/);
   assert.deepEqual(payload.allowedMentions, { parse: [], users: ['123'], roles: [] });
 });
 
@@ -220,7 +221,14 @@ function closeFixture(t, failAt) {
   const events = [];
   const guild = { maximumFileSize: 8_000_000, roles: { everyone: { id: 'everyone' } } };
   const logs = { ...channel('logs'), permissionsFor: who => who.id === 'everyone' ? new PermissionsBitField() : allPermissions,
-    send: async () => { events.push('upload'); if (failAt === 'upload') throw new Error('upload failed'); return { id: 'archive' }; } };
+    send: async payload => {
+      events.push('upload');
+      assert.equal(payload.embeds, undefined);
+      assert.equal(payload.flags, 32768);
+      assert.ok(flatten(payload.components).some(c => c.type === 13 && c.file.url === `attachment://${payload.files[0].name}`));
+      if (failAt === 'upload') throw new Error('upload failed');
+      return { id: 'archive' };
+    } };
   const ch = { ...channel('ticket-channel'), guild,
     permissionOverwrites: { edit: async (id, patch) => events.push(`${id}:${patch.SendMessages}`) },
     send: async () => {}, messages: { fetch: async () => { if (failAt === 'fetch') throw new Error('fetch failed'); return new Collection(); } },

@@ -2,7 +2,7 @@
 // Only missing settings are filled; later /configure changes take precedence.
 export const SERVER_SEED_KEY = 'alaska-scan-2026-10-18-v1';
 export const SERVER_SETTINGS = {
-  welcome: { channelId: '1560911382294302750' },
+  welcome: { channelId: '1560914979354583191' },
   sessions: { channelId: '1560914589066072074', staffRoleId: '1560951618361499718', pingRoleId: '1560951687429099552' },
   tickets: { categoryId: '1553703456055763115', supportRoleId: '1560951618361499718',
     logChannelId: '1553703567314002021', panelChannelId: '1560914284979167252' },
@@ -16,8 +16,10 @@ export const REFERENCE_SETTINGS = {
   panels: { affiliationChannelId: '1560915371865935882' },
 };
 
-export const SERVER_EMOJIS = {
-  support: { id: '1554358095503949825', name: 'rift_support', animated: false },
-  ticket: { id: '1554358147853062244', name: 'rift_ticket', animated: false },
-  link: { id: '1554358142220111872', name: 'rift_link', animated: false },
+// The customer explicitly moved welcomes to general and requested the compact layout.
+// Apply once to existing databases as well, preserving subsequent /configure edits.
+export const COMPACT_WELCOME_SEED_KEY = 'alaska-compact-welcome-general-2026-10-18-v1';
+export const COMPACT_WELCOME_SETTINGS = {
+  welcome: { channelId: '1560914979354583191', banner: null,
+    message: 'Welcome to **Alaska State Roleplay**, {user}! Thank you for joining; we hope you enjoy your time here.' },
 };

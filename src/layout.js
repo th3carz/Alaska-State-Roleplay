@@ -1,12 +1,14 @@
 import { fileURLToPath } from 'node:url';
 import { AttachmentBuilder, ContainerBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder,
-  SeparatorBuilder, TextDisplayBuilder, MessageFlags, SectionBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+  SeparatorBuilder, TextDisplayBuilder, MessageFlags, SectionBuilder, ButtonBuilder, ButtonStyle, FileBuilder } from 'discord.js';
 import { BOT_NAME, SERVER_NAME } from './store.js';
 
 export const bannerPath = name => fileURLToPath(new URL(`../assets/banners/${name}.png`, import.meta.url));
-export function card(title, text, { banner = null, imageURL = null, rows = [], metrics = [], color = 0x82b9c2, mentions = { parse: [] } } = {}) {
-  const box = new ContainerBuilder().setAccentColor(color);
-  const files = [];
+// Explicit null also clears an earlier colored accent when an existing card is edited.
+export const plainContainer = () => new ContainerBuilder({ accent_color: null });
+export function card(title, text, { banner = null, imageURL = null, rows = [], metrics = [], attachments = [], mentions = { parse: [] } } = {}) {
+  const box = plainContainer();
+  const files = [...attachments];
   if (imageURL || banner) {
     const url = imageURL || `attachment://${banner}.png`;
     if (!imageURL) files.push(new AttachmentBuilder(bannerPath(banner), { name: `${banner}.png` }));
@@ -18,6 +20,7 @@ export function card(title, text, { banner = null, imageURL = null, rows = [], m
     new SectionBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${metric.name}**\n-# ${metric.description}`))
       .setButtonAccessory(new ButtonBuilder().setCustomId(`metric:${metric.name.toLowerCase()}`).setLabel(String(metric.value)).setStyle(ButtonStyle.Secondary).setDisabled(true)));
   for (const row of rows) box.addActionRowComponents(row);
+  for (const file of attachments) box.addFileComponents(new FileBuilder().setURL(`attachment://${file.name}`));
   box.addSeparatorComponents(new SeparatorBuilder()).addTextDisplayComponents(
     new TextDisplayBuilder().setContent(`-# ${SERVER_NAME} | ${BOT_NAME}`));
   return { flags: MessageFlags.IsComponentsV2, components: [box], ...(files.length ? { files } : {}), allowedMentions: mentions };

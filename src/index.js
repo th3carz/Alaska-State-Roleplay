@@ -4,7 +4,9 @@ import { Client, Events, GatewayIntentBits, ActivityType } from 'discord.js';
 import { Store, GUILD_ID, SERVER_NAME, APPLICATION_ID, BOT_NAME } from './store.js';
 import { commands } from './commands.js';
 import { Bot } from './bot.js';
-import { SERVER_SETTINGS, SERVER_SEED_KEY, REFERENCE_SETTINGS, REFERENCE_SEED_KEY } from './server-config.js';
+import { migrateMessageStyles } from './message-style.js';
+import { SERVER_SETTINGS, SERVER_SEED_KEY, REFERENCE_SETTINGS, REFERENCE_SEED_KEY,
+  COMPACT_WELCOME_SETTINGS, COMPACT_WELCOME_SEED_KEY } from './server-config.js';
 
 if (existsSync('.env')) process.loadEnvFile('.env');
 const token = process.env.DISCORD_TOKEN?.trim();
@@ -18,6 +20,7 @@ const databasePath = process.env.PERSISTENT_DATABASE_PATH ||
 const store = new Store(resolve(databasePath));
 store.seedSettings(SERVER_SETTINGS, SERVER_SEED_KEY);
 store.seedSettings(REFERENCE_SETTINGS, REFERENCE_SEED_KEY);
+store.seedSettings(COMPACT_WELCOME_SETTINGS, COMPACT_WELCOME_SEED_KEY, { overwrite: true });
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -49,10 +52,18 @@ client.once(Events.ClientReady, async () => {
     }
     await bot.recover(guild);
     await bot.sessions.recover(guild);
+    await migrateMessageStyles(bot, guild);
     // These commands belong exclusively to this customer's server.
     await guild.commands.set(commands);
     initialized = true;
     await bot.panels.sync(guild);
+    const welcomeConfig = store.settings().welcome;
+    if (welcomeConfig.channelId) {
+      try {
+        const destination = await bot.channel(guild, welcomeConfig.channelId);
+        console.log(`Welcome destination: #${destination.name} (${destination.id}); compact Components V2.`);
+      } catch (error) { console.warn('Could not validate the welcome destination:', error.code ?? error.name); }
+    }
     panelTimer = setInterval(() => {
       if (!stopping) void (async () => {
         await bot.panels.sync(guild);

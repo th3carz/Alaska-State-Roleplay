@@ -8,10 +8,9 @@ const channelOption = (builder, name, description, types, required = true) =>
 const configure = new SlashCommandBuilder().setName('configure').setDescription('Configure the three bot systems')
   .setDMPermission(false).setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
   .addSubcommand(s => {
-    s.setName('welcome').setDescription('Set welcome channel, message, and banner');
+    s.setName('welcome').setDescription('Set compact welcome channel and message');
     channelOption(s, 'channel', 'Welcome channel', [ChannelType.GuildText]);
     textOption(s, 'message', 'Variables: {user}, {username}, {server}, {memberCount}');
-    textOption(s, 'banner', 'HTTPS image URL, or none to remove', false, 500);
     return s.addBooleanOption(o => o.setName('enabled').setDescription('Send welcome messages when members join'));
   })
   .addSubcommand(s => {

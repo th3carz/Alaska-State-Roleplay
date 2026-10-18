@@ -1,17 +1,9 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder,
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, TextDisplayBuilder,
   ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, LabelBuilder, UserSelectMenuBuilder } from 'discord.js';
-import { SERVER_NAME, BOT_NAME } from './store.js';
-import { SERVER_EMOJIS } from './server-config.js';
-import { card } from './layout.js';
+import { SERVER_NAME } from './store.js';
+import { card, plainContainer } from './layout.js';
 import { TICKET_TYPES, ticketDetails } from './ticket-types.js';
 
-export const COLORS = { blue: 0x337ca0, green: 0x45a179, orange: 0xd89b45, red: 0xbc525a };
-export function embed(title, text, color = COLORS.blue, banner = null) {
-  const e = new EmbedBuilder().setColor(color).setTitle(title).setDescription(text)
-    .setFooter({ text: `${BOT_NAME} | ${SERVER_NAME}` }).setTimestamp();
-  if (banner) e.setImage(banner);
-  return e;
-}
 export function validBanner(value) {
   if (value === null) return undefined;
   if (value.toLowerCase() === 'none') return null;
@@ -20,19 +12,24 @@ export function validBanner(value) {
   if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Use an HTTPS image URL without credentials.');
   return url.href;
 }
-export function welcomePayload(member, config) {
+export function welcomePayload(member, config, homeChannelId = null) {
   const vars = { user: `<@${member.id}>`, username: member.user.username,
     server: SERVER_NAME, memberCount: String(member.guild.memberCount) };
   const text = config.message.replace(/\{(user|username|server|memberCount)\}/g, (_, key) => vars[key]);
-  return { content: `<@${member.id}>`, embeds: [embed(`Welcome to ${SERVER_NAME}`, text, COLORS.blue, config.banner)
-    .setThumbnail(member.user.displayAvatarURL({ size: 256 }))],
+  const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('welcome:member-count')
+    .setLabel(String(member.guild.memberCount)).setStyle(ButtonStyle.Secondary).setDisabled(true));
+  if (homeChannelId) row.addComponents(new ButtonBuilder().setLabel('Dashboard').setStyle(ButtonStyle.Link)
+    .setURL(`https://discord.com/channels/${member.guild.id}/${homeChannelId}`));
+  const box = plainContainer().addTextDisplayComponents(new TextDisplayBuilder().setContent(`> ${text.replaceAll('\n','\n> ')}`))
+    .addActionRowComponents(row);
+  return { flags: MessageFlags.IsComponentsV2, components: [box],
     allowedMentions: { parse: [], users: [member.id], roles: [] } };
 }
 export const sessionDetails = {
-  start: { title: 'Session Startup', text: 'Our ER:LC session is now open. Join Alaska State Roleplay using the button below.', color: COLORS.green },
-  boost: { title: 'Session Boost', text: 'We are looking for more players. Join the active session and help bring Alaska to life.', color: COLORS.orange },
-  full: { title: 'Session Full', text: 'Our ER:LC server is currently full. Thank you for joining us; please wait for a space to open.', color: COLORS.orange },
-  end: { title: 'Session Ended', text: 'Our ER:LC session has ended. Thank you for joining Alaska State Roleplay.', color: COLORS.red },
+  start: { title: 'Session Startup', text: 'Our ER:LC session is now open. Join Alaska State Roleplay using the button below.' },
+  boost: { title: 'Session Boost', text: 'We are looking for more players. Join the active session and help bring Alaska to life.' },
+  full: { title: 'Session Full', text: 'Our ER:LC server is currently full. Thank you for joining us; please wait for a space to open.' },
+  end: { title: 'Session Ended', text: 'Our ER:LC session has ended. Thank you for joining Alaska State Roleplay.' },
 };
 export function assertSessionTransition(current, action) {
   if (!sessionDetails[action]) throw new Error('Unknown session action.');
@@ -47,7 +44,7 @@ export function sessionPayload(action, config, hostId, message) {
     (config.ownerLabel ? `> **Server Owner:** ${config.ownerLabel}\n` : '') +
     `> **Join Code:** ${config.code || 'Not configured'}\n> **Session Host:** <@${hostId}>`;
   return card(detail.title, ping + (message || detail.text) + info, { banner: 'sessions', imageURL: config.banner,
-    color: detail.color, rows: [new ActionRowBuilder().addComponents(...sessionButtons(config, action === 'end', false))],
+    rows: [new ActionRowBuilder().addComponents(...sessionButtons(config, action === 'end', false))],
     mentions: { parse: [], users: [], roles: config.pingRoleId ? [config.pingRoleId] : [] } });
 }
 function sessionButtons(config, notifications = true, statusButton = false, status = 'Offline') {
@@ -55,7 +52,7 @@ function sessionButtons(config, notifications = true, statusButton = false, stat
   if (statusButton) buttons.push(new ButtonBuilder().setCustomId('session:status').setLabel(status).setDisabled(true)
     .setStyle(status === 'Offline' ? ButtonStyle.Danger : ButtonStyle.Success));
   if (config.code) buttons.push(new ButtonBuilder().setLabel('Quick Join').setStyle(ButtonStyle.Link)
-    .setEmoji(SERVER_EMOJIS.link).setURL(`https://erlc.gg/join/${encodeURIComponent(config.code)}`));
+    .setURL(`https://erlc.gg/join/${encodeURIComponent(config.code)}`));
   if (notifications && config.pingRoleId) buttons.push(new ButtonBuilder().setCustomId('session:notifications')
     .setLabel('Session Notification').setStyle(ButtonStyle.Secondary));
   return buttons;
@@ -66,15 +63,15 @@ export function openPanel(config) {
     banner: 'support', imageURL: config.banner,
     rows: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('ticket:type')
       .setPlaceholder('Choose assistance').addOptions(...Object.entries(TICKET_TYPES).map(([value, type]) =>
-        ({ label: type.label, value, description: type.description, emoji: SERVER_EMOJIS.ticket })))),
+        ({ label: type.label, value, description: type.description })))),
     new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ticket:faq').setLabel('Ticket FAQ')
-      .setEmoji(SERVER_EMOJIS.support).setStyle(ButtonStyle.Secondary))] });
+      .setStyle(ButtonStyle.Secondary))] });
 }
 export function homePanel(settings, guildId) {
   const buttons = [];
-  if (settings.sessions.channelId) buttons.push(new ButtonBuilder().setLabel('Sessions').setEmoji(SERVER_EMOJIS.link)
+  if (settings.sessions.channelId) buttons.push(new ButtonBuilder().setLabel('Sessions')
     .setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guildId}/${settings.sessions.channelId}`));
-  if (settings.tickets.panelChannelId) buttons.push(new ButtonBuilder().setLabel('Support').setEmoji(SERVER_EMOJIS.support)
+  if (settings.tickets.panelChannelId) buttons.push(new ButtonBuilder().setLabel('Support')
     .setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guildId}/${settings.tickets.panelChannelId}`));
   return card(SERVER_NAME,
     'Welcome to **Alaska State Roleplay**. We hope you enjoy your time in our community.\n\n' +
@@ -88,7 +85,7 @@ export function sessionStatusPanel(config, current, live = { connected: false })
   return card('Session Status', 'Welcome to **Alaska State Roleplay** sessions. Our staff team manages session announcements in this channel.\n\n' +
     (active ? `**Session host:** <@${current.hostId}>` : 'Watch this channel for the next session startup.') +
     (!live.connected ? '\n-# Live player statistics are currently unavailable.' : ''), {
-    banner: 'sessions', imageURL: config.banner, color: active ? COLORS.green : COLORS.red,
+    banner: 'sessions', imageURL: config.banner,
     metrics: [
       { name: 'Players', description: 'How many players are in-game', value: live.connected ? `${live.players}/${live.maxPlayers}` : 'Unavailable' },
       { name: 'Queue', description: 'How many players are waiting to join', value: live.connected ? live.queue : 'Unavailable' },
@@ -98,7 +95,7 @@ export function sessionStatusPanel(config, current, live = { connected: false })
 export function affiliationsPanel(settings, guildId) {
   return card('Affiliations', 'Interested in affiliating with **Alaska State Roleplay**?\n\nOpen a support ticket and share your community information so our team can review your enquiry.', {
     banner: 'affiliations', rows: settings.tickets.panelChannelId ? [new ActionRowBuilder().addComponents(new ButtonBuilder()
-      .setLabel('Contact Support').setStyle(ButtonStyle.Link).setEmoji(SERVER_EMOJIS.support)
+      .setLabel('Contact Support').setStyle(ButtonStyle.Link)
       .setURL(`https://discord.com/channels/${guildId}/${settings.tickets.panelChannelId}`))] : [] });
 }
 export function ticketPanel(ticket, banner = null, notify = false) {

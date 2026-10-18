@@ -8,7 +8,7 @@ export const APPLICATION_ID = '1561501281355300895';
 export const BOT_NAME = 'Alaska Operations';
 export const defaults = Object.freeze({
   welcome: { enabled: true, channelId: null, banner: null,
-    message: 'Welcome to **Alaska State Roleplay**, {user}!\nWe hope you enjoy your time with us. You are member **#{memberCount}**.' },
+    message: 'Welcome to **Alaska State Roleplay**, {user}! Thank you for joining; we hope you enjoy your time here.' },
   sessions: { channelId: null, code: null, staffRoleId: null, pingRoleId: null, banner: null, serverLabel: 'Alaska State Roleplay | VC Only', ownerLabel: null },
   tickets: { categoryId: null, supportRoleId: null, logChannelId: null, banner: null, panelChannelId: null,
     reportRoleId: null, managementRoleId: null, leadershipRoleIds: [] },
@@ -66,14 +66,16 @@ export class Store {
       .run(JSON.stringify(settings));
     return settings;
   }
-  seedSettings(seed, migrationId) {
+  hasMigration(id) { return !!this.db.prepare('SELECT id FROM migrations WHERE id=?').get(id); }
+  completeMigration(id) { this.db.prepare('INSERT OR IGNORE INTO migrations(id) VALUES (?)').run(id); }
+  seedSettings(seed, migrationId, { overwrite = false } = {}) {
     if (this.db.prepare('SELECT id FROM migrations WHERE id=?').get(migrationId)) return;
     this.db.exec('BEGIN');
     try {
       for (const [section, values] of Object.entries(seed)) {
         const current = this.settings()[section];
         if (!current) throw new Error('Invalid server seed section');
-        const patch = Object.fromEntries(Object.entries(values).filter(([key]) => current[key] == null || (Array.isArray(current[key]) && current[key].length === 0)));
+        const patch = Object.fromEntries(Object.entries(values).filter(([key]) => overwrite || current[key] == null || (Array.isArray(current[key]) && current[key].length === 0)));
         if (Object.keys(patch).length) this.configure(section, patch);
       }
       this.db.prepare('INSERT INTO migrations(id) VALUES (?)').run(migrationId);

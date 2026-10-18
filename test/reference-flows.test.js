@@ -6,10 +6,12 @@ import { join } from 'node:path';
 import { Collection, PermissionsBitField, PermissionFlagsBits as P, MessageFlags } from 'discord.js';
 import { Store, GUILD_ID, APPLICATION_ID } from '../src/store.js';
 import { Bot, ticketOverwrites, isSupport } from '../src/bot.js';
-import { SERVER_SETTINGS, SERVER_SEED_KEY, REFERENCE_SETTINGS, REFERENCE_SEED_KEY } from '../src/server-config.js';
+import { SERVER_SETTINGS, SERVER_SEED_KEY, REFERENCE_SETTINGS, REFERENCE_SEED_KEY,
+  COMPACT_WELCOME_SETTINGS, COMPACT_WELCOME_SEED_KEY } from '../src/server-config.js';
 import { Erlc } from '../src/erlc.js';
 import { componentText, editPayload } from '../src/layout.js';
-import { openPanel, ticketPanel, ticketModal, closeModal, votePanel, sessionStatusPanel, homePanel, affiliationsPanel } from '../src/ui.js';
+import { openPanel, ticketPanel, ticketModal, closeModal, votePanel, sessionStatusPanel, homePanel, affiliationsPanel,
+  welcomePayload, sessionPayload, ticketNotice } from '../src/ui.js';
 import { ticketDetails, ticketName, typeConfiguration } from '../src/ticket-types.js';
 import { renderTranscript } from '../src/transcript.js';
 
@@ -67,6 +69,80 @@ test('reference cards serialize valid banner-first V2 layouts without legacy mes
   assert.deepEqual(edit.attachments, []);
   assert.equal(ticketModal('internal').toJSON().components[0].component.type, 5);
   assert.equal(closeModal(1).toJSON().components[0].type, 18);
+});
+
+test('all rich message layouts use V2 with no custom emoji icons or colored accents', t => {
+  const { store } = fixture(t), s = store.settings();
+  const ticket = store.reserveTicket('123','Please help me.',s.tickets);
+  const vote = store.newVote(2,'staff',s.sessions.channelId);
+  const payloads = [homePanel(s,GUILD_ID),openPanel(s.tickets),ticketPanel(ticket),sessionStatusPanel(s.sessions,null),
+    affiliationsPanel(s,GUILD_ID),votePanel({...vote,state:'open'},[],s.sessions),ticketNotice('Notice','Saved.'),
+    ...['start','boost','full','end'].map(action=>sessionPayload(action,s.sessions,'staff')),
+    welcomePayload({id:'123',user:{username:'Member'},guild:{id:GUILD_ID,memberCount:10}},s.welcome,s.panels.homeChannelId)];
+  for (const payload of payloads) {
+    assert.equal(payload.flags,MessageFlags.IsComponentsV2);
+    assert.equal(payload.embeds,undefined);
+    const json=payload.components.map(c=>c.toJSON());
+    for (const c of flat(json)) {
+      if(c.type===17) assert.equal(c.accent_color,null);
+      assert.equal(c.emoji,undefined);
+      for(const option of c.options||[]) assert.equal(option.emoji,undefined);
+    }
+    assert.doesNotMatch(JSON.stringify(json),/<a?:\w+:\d+>/);
+  }
+});
+
+test('compact welcome has quoted text, member count and Dashboard without a header, avatar, banner or footer', t => {
+  const { store } = fixture(t);
+  const member={id:'123',user:{username:'Member'},guild:{id:GUILD_ID,memberCount:45}};
+  const payload=welcomePayload(member,store.settings().welcome,store.settings().panels.homeChannelId);
+  const box=payload.components[0].toJSON();
+  assert.equal(box.components.length,2);
+  assert.equal(box.components[0].type,10);
+  assert.match(box.components[0].content,/^> Welcome to \*\*Alaska State Roleplay\*\*, <@123>/);
+  const [count,dashboard]=box.components[1].components;
+  assert.equal(count.label,'45'); assert.equal(count.disabled,true);
+  assert.equal(dashboard.label,'Dashboard');
+  assert.equal(dashboard.url,`https://discord.com/channels/${GUILD_ID}/1560914196898643969`);
+  assert.deepEqual(payload.allowedMentions,{parse:[],users:['123'],roles:[]});
+});
+
+test('the welcome migration replaces the old destination once and preserves later configuration', t => {
+  const { store } = fixture(t);
+  store.configure('welcome',{channelId:'old',message:'Old message',banner:'https://example.com/banner.png',enabled:false});
+  store.seedSettings(COMPACT_WELCOME_SETTINGS,COMPACT_WELCOME_SEED_KEY,{overwrite:true});
+  assert.equal(store.settings().welcome.channelId,'1560914979354583191');
+  assert.equal(store.settings().welcome.banner,null);
+  assert.equal(store.settings().welcome.enabled,false);
+  store.configure('welcome',{channelId:'new-choice',message:'New message'});
+  store.seedSettings(COMPACT_WELCOME_SETTINGS,COMPACT_WELCOME_SEED_KEY,{overwrite:true});
+  assert.equal(store.settings().welcome.channelId,'new-choice');
+  assert.equal(store.settings().welcome.message,'New message');
+});
+
+test('member joins send the compact welcome to general and skip bots and other guilds', async t => {
+  const { store,bot,sent }=fixture(t);
+  store.seedSettings(COMPACT_WELCOME_SETTINGS,COMPACT_WELCOME_SEED_KEY,{overwrite:true});
+  let destination;
+  const originalChannel=bot.channel;
+  bot.channel=async (guild,id)=>{destination=id;return originalChannel(guild,id);};
+  const member={id:'123',user:{username:'Member',bot:false},guild:{id:GUILD_ID,memberCount:45}};
+  await bot.welcome(member);
+  assert.equal(destination,'1560914979354583191');
+  assert.equal(sent.length,1);
+  assert.equal(sent[0].flags,MessageFlags.IsComponentsV2);
+  await bot.welcome({...member,user:{...member.user,bot:true}});
+  await bot.welcome({...member,guild:{id:'another-guild'}});
+  assert.equal(sent.length,1);
+});
+
+test('configuration view is a Components V2 card', async t => {
+  const {bot,guild}=fixture(t);
+  let reply;
+  await bot.configure({guild,user:{id:'staff'},options:{getSubcommand:()=> 'view'},editReply:async payload=>{reply=payload;}});
+  assert.equal(reply.flags,MessageFlags.IsComponentsV2);
+  assert.equal(reply.embeds,undefined);
+  assert.match(componentText(reply.components),/Bot Configuration/);
 });
 
 test('live counts use the official combined endpoint, count staff in-game, and cache requests', async () => {

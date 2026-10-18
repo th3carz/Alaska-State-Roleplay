@@ -37,8 +37,12 @@ export class Panels {
     return this.bot.locks.run(`panel:${kind}`, async () => {
       const channel = await this.bot.channel(guild, channelId, ChannelType.GuildText);
       const me = await this.bot.botMember(guild);
-      if (!channel.permissionsFor(me)?.has([P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.EmbedLinks]))
-        throw new Error('Panel channel requires View Channel, Send Messages, Read Message History, and Embed Links.');
+      const permissions = channel.permissionsFor(me);
+      const required = [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.EmbedLinks];
+      if (!permissions?.has(required)) {
+        const missing = permissions?.missing(required) ?? ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'EmbedLinks'];
+        throw new Error(`Missing channel permissions: ${missing.join(', ')}`);
+      }
       const saved = this.bot.store.panel(kind);
       let message;
       if (saved?.channel_id === channelId) {

@@ -7,7 +7,7 @@
   "engines": { "node": ">=24.0.0 <25" },
   "scripts": {
     "start": "node src/index.js",
-    "check": "node --check src/index.js && node --check src/bot.js && node --check src/store.js && node --check src/ui.js && node --check src/commands.js && node --check src/transcript.js",
+    "check": "node --check src/index.js && node --check src/bot.js && node --check src/store.js && node --check src/ui.js && node --check src/commands.js && node --check src/transcript.js && node --check src/scan.js",
     "test": "node --test"
   },
   "dependencies": { "discord.js": "14.27.0" }

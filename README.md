@@ -7,7 +7,7 @@ Repository: [th3carz/Alaska-State-Roleplay](https://github.com/th3carz/Alaska-St
 
 [Invite Alaska Operations to Alaska State Roleplay](https://discord.com/oauth2/authorize?client_id=1561501281355300895&scope=bot%20applications.commands&permissions=335662096&guild_id=1534042183559282819&disable_guild_select=true)
 
-This standalone Discord bot contains exactly three functional systems: welcome messages, ER:LC sessions, and private support tickets. The configuration and welcome-preview commands support those systems. It does not include payments, verification, moderation, orders, or a website.
+This standalone Discord bot contains exactly three functional systems: welcome messages, ER:LC sessions, and private support tickets. The configuration, welcome-preview, and server-scan commands support those systems. It does not include payments, verification, moderation, orders, or a website.
 
 ## What is included
 
@@ -56,6 +56,7 @@ Each configuration command preserves omitted optional settings. Changing the sup
 | --- | --- |
 | `/welcome-test` | Manage Server; private welcome preview |
 | `/configure ...` | Manage Server; settings for the three systems |
+| `/scan` | Manage Server; private JSON and TXT exports of channel/role order, IDs, and every server custom emoji |
 | `/session start [message]` | Session staff or Manage Server; start an inactive session |
 | `/session boost [message]` | Session staff or Manage Server; boost an active session |
 | `/session full [message]` | Session staff or Manage Server; mark active session full |
@@ -66,6 +67,14 @@ Each configuration command preserves omitted optional settings. Changing the sup
 | `/ticket close reason:...` | Ticket opener or support staff; archive then delete |
 
 Welcome messages mention only the joining member. Session announcements mention only the configured session ping role. Arbitrary @everyone text in a custom message does not create a mass ping. Old session announcement buttons are retired when a new session announcement is posted, when the bot can edit the earlier message.
+
+## Exporting the server with /scan
+
+Run `/scan` as a member with **Manage Server**. The response is private and includes a readable `.txt` file and a structured `.json` file. Download either file and attach it to your ChatGPT conversation to share the IDs needed for setup.
+
+Each run fetches current channel, role, and emoji inventories from Discord. It exports channel names/types/IDs, category parent IDs, raw positions, and a numbered server-order hierarchy. Roles are listed from highest to lowest, including managed roles and @everyone. Every server custom emoji includes its name, ID, static/animated status, usable `<:name:id>` or `<a:name:id>` text, image URL, availability, and any role restrictions.
+
+Channel order follows the server's category/type grouping and snowflake tie order, rather than a member's personal favorites or custom client layout. Threads/forum posts are outside this channel inventory, and only metadata Discord exposes to the bot can be exported. Missing parents are identified in the JSON. The command only reads server metadata; it does not modify the server or export message/member lists.
 
 ## Persistent hosting
 

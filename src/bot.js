@@ -3,6 +3,7 @@ import { GUILD_ID, Locks } from './store.js';
 import { embed, validBanner, welcomePayload, sessionPayload, assertSessionTransition,
   openPanel, ticketPanel, ticketModal, closeModal } from './ui.js';
 import { collectTranscript } from './transcript.js';
+import { fetchServerScan, scanFiles } from './scan.js';
 
 const TEXT_PERMS = [P.ViewChannel, P.SendMessages, P.EmbedLinks];
 const TICKET_PERMS = [...TEXT_PERMS, P.ReadMessageHistory, P.AttachFiles, P.ManageChannels, P.ManageRoles];
@@ -72,6 +73,7 @@ export class Bot {
       if (i.isChatInputCommand()) {
         await i.deferReply({ flags: MessageFlags.Ephemeral });
         if (i.commandName === 'configure') await this.configure(i);
+        else if (i.commandName === 'scan') await this.scan(i);
         else if (i.commandName === 'welcome-test') {
           await this.manager(i);
           const payload = welcomePayload(await this.member(i), this.store.settings().welcome);
@@ -102,6 +104,14 @@ export class Bot {
         else throw new Error('This form is no longer supported.');
       }
     } catch (error) { await this.error(i, error); }
+  }
+  async scan(i) {
+    await this.manager(i);
+    await this.locks.run('scan', async () => {
+      const scan = await fetchServerScan(i.guild);
+      await i.editReply({ content: `Server scan complete: ${scan.counts.channels} channels, ${scan.counts.roles} roles, and ${scan.counts.emojis} emojis (${scan.counts.animatedEmojis} animated). Download the JSON file and attach it in your ChatGPT conversation for configuration.`,
+        files: scanFiles(scan), allowedMentions: { parse: [] } });
+    });
   }
   async configure(i) {
     await this.manager(i);

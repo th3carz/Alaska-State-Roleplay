@@ -27,9 +27,9 @@ const allPermissions = new PermissionsBitField(Object.values(P));
 const channel = id => ({ id, name: id, type: ChannelType.GuildText,
   permissionsFor: () => allPermissions });
 
-test('guild is fixed and commands contain only setup plus the three ordered systems', () => {
+test('guild is fixed and commands contain the three systems and their setup/export tools', () => {
   assert.equal(GUILD_ID, '1534042183559282819');
-  assert.deepEqual(commands.map(c => c.name), ['configure', 'session', 'ticket', 'welcome-test']);
+  assert.deepEqual(commands.map(c => c.name), ['configure', 'session', 'ticket', 'welcome-test', 'scan']);
   for (const command of commands) assert.equal(command.dm_permission, false);
   for (const cmd of commands) for (const sub of cmd.options ?? []) {
     let optional = false;

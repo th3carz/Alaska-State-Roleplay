@@ -49,4 +49,6 @@ const ticket = new SlashCommandBuilder().setName('ticket').setDescription('Priva
 export const commands = [configure, session, ticket,
   new SlashCommandBuilder().setName('welcome-test').setDescription('Preview the welcome message privately')
     .setDMPermission(false).setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+  new SlashCommandBuilder().setName('scan').setDescription('Export ordered channel/role IDs and all server emojis')
+    .setDMPermission(false).setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 ].map(c => c.toJSON());

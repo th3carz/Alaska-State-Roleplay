@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "check": "node --check src/bot.js && node --check src/commands.js && node --check src/erlc.js && node --check src/index.js && node --check src/layout.js && node --check src/message-style.js && node --check src/panels.js && node --check src/scan.js && node --check src/server-config.js && node --check src/sessions.js && node --check src/store.js && node --check src/ticket-extras.js && node --check src/ticket-types.js && node --check src/transcript.js && node --check src/ui.js",
+    "check": "node --check src/clear.js && node --check src/bot.js && node --check src/commands.js && node --check src/erlc.js && node --check src/index.js && node --check src/layout.js && node --check src/message-style.js && node --check src/panels.js && node --check src/scan.js && node --check src/server-config.js && node --check src/sessions.js && node --check src/store.js && node --check src/ticket-extras.js && node --check src/ticket-types.js && node --check src/transcript.js && node --check src/ui.js",
     "test": "node --test"
   },
   "dependencies": {

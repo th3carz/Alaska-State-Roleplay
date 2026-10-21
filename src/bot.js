@@ -10,6 +10,7 @@ import { TicketExtras } from './ticket-extras.js';
 import { ticketDetails, ticketRoles, ticketName, typeConfiguration } from './ticket-types.js';
 import { card, editPayload, componentText } from './layout.js';
 import { ticketNotice } from './ui.js';
+import { PrivateClear } from './clear.js';
 
 const TEXT_PERMS = [P.ViewChannel, P.SendMessages, P.EmbedLinks];
 const TICKET_PERMS = [...TEXT_PERMS, P.ReadMessageHistory, P.AttachFiles, P.ManageChannels, P.ManageRoles];
@@ -49,6 +50,7 @@ export class Bot {
   constructor(client, store) {
     this.client = client; this.store = store;
     this.panels = new Panels(this); this.sessions = new Sessions(this); this.ticketExtras = new TicketExtras(this);
+    this.clear = new PrivateClear(this);
   }
   async botMember(guild) { return guild.members.me ?? guild.members.fetchMe(); }
   async channel(guild, id, type = ChannelType.GuildText) {
@@ -77,6 +79,7 @@ export class Bot {
   async handle(i) {
     if (!i.isChatInputCommand() && !i.isButton() && !i.isModalSubmit() && !i.isStringSelectMenu?.()) return;
     try {
+      if (await this.clear.handle(i)) return;
       if (!i.inGuild() || i.guildId !== GUILD_ID) {
         await i.reply({ content: 'This bot is reserved for Alaska State Roleplay.', flags: MessageFlags.Ephemeral });
         return;

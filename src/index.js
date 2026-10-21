@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { Client, Events, GatewayIntentBits, ActivityType } from 'discord.js';
+import { Client, Events, GatewayIntentBits, ActivityType, Partials } from 'discord.js';
 import { Store, GUILD_ID, SERVER_NAME, APPLICATION_ID, BOT_NAME } from './store.js';
 import { commands } from './commands.js';
 import { Bot } from './bot.js';
@@ -23,7 +23,8 @@ store.seedSettings(REFERENCE_SETTINGS, REFERENCE_SEED_KEY);
 store.seedSettings(COMPACT_WELCOME_SETTINGS, COMPACT_WELCOME_SEED_KEY, { overwrite: true });
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+    GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.DirectMessages],
+  partials: [Partials.Channel],
   allowedMentions: { parse: [], repliedUser: false },
   presence: { activities: [{ name: SERVER_NAME, type: ActivityType.Watching }] },
 });
@@ -80,6 +81,9 @@ client.once(Events.ClientReady, async () => {
 client.on(Events.InteractionCreate, i => {
   if (!initialized || stopping) return;
   void bot.handle(i);
+});
+client.on(Events.MessageCreate, message => {
+  if (initialized && !stopping) void bot.clear.message(message);
 });
 client.on(Events.GuildMemberAdd, member => {
   if (initialized && !stopping) void bot.welcome(member).catch(error =>
